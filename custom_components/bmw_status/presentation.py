@@ -17,6 +17,7 @@ class EntitySnapshot:
     name: str
     device_class: str | None = None
     unit: str | None = None
+    attributes: dict[str, Any] | None = None
 
     @property
     def domain(self) -> str:

@@ -2,7 +2,7 @@
 
 `bmw_status` ist das Backend für `bmw-status-card`.
 
-Version: 0.2.1
+Version: 0.2.2
 
 ## Aktueller Stand
 

@@ -4,7 +4,7 @@ from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from custom_components.bmw_status.const import CARDATA_DOMAIN, CONF_CARDATA_DEVICE_ID, DOMAIN
+from custom_components.bmw_status.const import CARDATA_DOMAIN, CONF_CARDATA_DEVICE_ID, CONF_LICENSE_PLATE, DOMAIN
 from custom_components.bmw_status.coordinator import BMWStatusCoordinator
 
 
@@ -54,3 +54,46 @@ async def test_coordinator_projects_only_the_selected_cardata_device(hass):
     assert data["presentation"]["entities"]["fuel"] is None
     assert "map" not in data["presentation"]
     assert data["image_status"] == "disabled"
+
+
+async def test_image_prompt_uses_cardata_vehicle_identity_and_configured_plate(hass):
+    """Server-side image prompts retain the detailed vehicle identity from CarData."""
+    cardata_entry = MockConfigEntry(domain=CARDATA_DOMAIN, entry_id="cardata-entry")
+    cardata_entry.add_to_hass(hass)
+    device = dr.async_get(hass).async_get_or_create(
+        config_entry_id=cardata_entry.entry_id,
+        identifiers={(CARDATA_DOMAIN, "VIN-IDENTITY")},
+        name="My BMW",
+        manufacturer="BMW",
+        model="X5",
+    )
+    entity = er.async_get(hass).async_get_or_create(
+        domain="sensor", platform=CARDATA_DOMAIN, unique_id="vin_identity_basic", device_id=device.id
+    )
+    hass.states.async_set(
+        entity.entity_id,
+        "ok",
+        {
+            "friendly_name": "Vehicle Basic Data",
+            "vehicle_basic_data_raw": {
+                "brand": "BMW",
+                "modelName": "X5 xDrive50e",
+                "series": "G05",
+                "constructionDate": "2024-03-01",
+                "colourDescription": "Tanzanite Blue",
+                "bodyType": "SAV",
+            },
+        },
+    )
+    status_entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={CONF_CARDATA_DEVICE_ID: device.id},
+        options={CONF_LICENSE_PLATE: "M-AB 1234"},
+    )
+    status_entry.add_to_hass(hass)
+    coordinator = BMWStatusCoordinator(hass, status_entry)
+
+    prompt = coordinator._build_state_render_prompt({"vehicle": coordinator._vehicle_metadata(device.id), "status": {"key": "parked"}})
+
+    assert "2024 Tanzanite Blue BMW X5 G05 SAV" in prompt
+    assert "License plate text must remain exactly: M-AB 1234." in prompt

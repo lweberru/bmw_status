@@ -138,8 +138,12 @@ class BMWStatusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         """Build a full-frame prompt from the semantic presentation."""
         vehicle = presentation.get("vehicle") or {}
         status = presentation.get("status") or {}
-        name = str(vehicle.get("name") or "BMW")
-        model = str(vehicle.get("model") or "").strip()
+        identity = " ".join(
+            str(vehicle.get(field) or "").strip()
+            for field in ("year", "color", "manufacturer", "model", "series", "trim", "body")
+            if str(vehicle.get(field) or "").strip()
+        ) or str(vehicle.get("name") or "BMW")
+        license_plate = str(vehicle.get("license_plate") or "").strip()
         image_options = self.entry.options.get(CONF_IMAGE) or {}
         configured_scene = image_options.get("scene_mode", "auto")
         scene_key = status.get("key") if configured_scene == "auto" else configured_scene
@@ -152,9 +156,14 @@ class BMWStatusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             if str(item.get("state") or "").lower() in {"on", "true", "open", "opened"}
         ]
         openings = f"Open only: {', '.join(open_names)}." if open_names else "Keep all doors, windows, hood, trunk and sunroof closed."
+        identity_lock = (
+            f"This must be exactly this vehicle identity: {identity}. "
+            "Do not change its manufacturer, model family, body shape, paint color, trim, badges or wheel design."
+        )
+        plate_instruction = f"License plate text must remain exactly: {license_plate}." if license_plate else ""
         return (
-            f"Full-frame photorealistic {view} image of {name} {model}, {scene}. "
-            f"Keep the same vehicle identity, camera framing and background. {openings} "
+            f"Full-frame photorealistic {view} image of {identity}, {scene}. "
+            f"{identity_lock} {plate_instruction} Keep the same camera framing and background. {openings} "
             "Use vehicle-relative left and right; do not mirror the vehicle."
         ).replace("  ", " ").strip()
 
@@ -188,13 +197,62 @@ class BMWStatusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         device = dr.async_get(self.hass).async_get(device_id)
         if not device:
             return {"device_id": device_id, "name": device_id, "manufacturer": None, "model": None}
-        return {
+        metadata: dict[str, str | None] = {
             "device_id": device_id,
             "name": device.name_by_user or device.name or device_id,
             "manufacturer": device.manufacturer,
             "model": device.model,
-            "license_plate": self.entry.options.get(CONF_LICENSE_PLATE) or None,
+            "series": None,
+            "year": None,
+            "color": None,
+            "trim": None,
+            "body": None,
+            "license_plate": None,
         }
+        for snapshot in self._entity_snapshots(device_id):
+            attributes = snapshot.attributes or {}
+            basic = attributes.get("vehicle_basic_data") or attributes.get("vehicleBasicData")
+            raw = attributes.get("vehicle_basic_data_raw") or attributes.get("vehicleBasicDataRaw")
+            if isinstance(basic, dict):
+                self._merge_vehicle_metadata(metadata, basic, raw=False)
+            if isinstance(raw, dict):
+                self._merge_vehicle_metadata(metadata, raw, raw=True)
+        metadata["license_plate"] = str(self.entry.options.get(CONF_LICENSE_PLATE) or metadata["license_plate"] or "").strip() or None
+        return metadata
+
+    @staticmethod
+    def _merge_vehicle_metadata(metadata: dict[str, str | None], values: dict[str, Any], *, raw: bool) -> None:
+        """Fill missing vehicle identity fields from CarData's basic-data variants."""
+        fields = (
+            {
+                "manufacturer": ("brand",),
+                "model": ("modelName", "modelRange", "series", "seriesDevt"),
+                "series": ("series", "seriesDevt"),
+                "year": ("constructionDate",),
+                "color": ("colourDescription", "colourCodeRaw"),
+                "trim": ("trim", "package", "edition"),
+                "body": ("bodyType",),
+                "license_plate": ("licensePlate", "license_plate", "registrationNumber"),
+            }
+            if raw
+            else {
+                "model": ("model_name",),
+                "series": ("series",),
+                "year": ("construction_date",),
+                "color": ("color",),
+                "trim": ("trim", "package", "edition"),
+                "body": ("body_type",),
+                "license_plate": ("license_plate", "licensePlate", "registration_number"),
+            }
+        )
+        for target, sources in fields.items():
+            if metadata.get(target):
+                continue
+            for source in sources:
+                value = str(values.get(source) or "").strip()
+                if value:
+                    metadata[target] = value[:4] if target == "year" else value
+                    break
 
     def _entity_snapshots(self, device_id: str) -> list[EntitySnapshot]:
         """Collect current states for the selected CarData device only."""
@@ -213,6 +271,7 @@ class BMWStatusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     name=str(state.attributes.get("friendly_name") or entry.entity_id),
                     device_class=state.attributes.get("device_class"),
                     unit=state.attributes.get("unit_of_measurement"),
+                    attributes=dict(state.attributes),
                 )
             )
         return snapshots
