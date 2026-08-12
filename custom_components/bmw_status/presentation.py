@@ -124,10 +124,10 @@ def build_presentation(
             "device_tracker": _entity_data(tracker),
         },
         "groups": {
-            "doors": [_entity_data(entity) for entity in doors],
-            "tires": [_entity_data(entity) for entity in tires],
-            "service": [_entity_data(entity) for entity in service],
-            "climate": [_entity_data(entity) for entity in climate],
+            "doors": [_group_entity_data(entity, "doors") for entity in doors],
+            "tires": [_group_entity_data(entity, "tires") for entity in tires],
+            "service": [_group_entity_data(entity, "service") for entity in service],
+            "climate": [_group_entity_data(entity, "climate") for entity in climate],
         },
         "badges": _build_badges(fuel, tires, doors, status["key"]),
         "images": [],
@@ -187,6 +187,73 @@ def _entity_data(entity: EntitySnapshot | None) -> dict[str, str] | None:
     if entity.unit:
         data["unit"] = entity.unit
     return data
+
+
+def _group_entity_data(entity: EntitySnapshot, group: str) -> dict[str, str]:
+    """Add rendering metadata for a presentation group without exposing heuristics."""
+    data = _entity_data(entity)
+    assert data is not None
+    search_text = entity.search_text
+    if group == "tires":
+        position = _tire_position(search_text)
+        data["label"] = f"Reifendruck {position}"
+        data["position"] = position
+        data["role"] = "target" if _is_tire_target(search_text) else "actual"
+    else:
+        data["label"] = _group_label(group, search_text, entity.name)
+    return data
+
+
+def _tire_position(search_text: str) -> str:
+    """Return the stable human-readable wheel position."""
+    front = "front" in search_text or "vorne" in search_text
+    rear = "rear" in search_text or "hinten" in search_text
+    left = "left" in search_text or "fahrer" in search_text or "links" in search_text
+    right = "right" in search_text or "passenger" in search_text or "rechts" in search_text
+    axle = "Vorne" if front else "Hinten" if rear else ""
+    side = "links" if left else "rechts" if right else ""
+    return f"{axle} {side}".strip() or "Unbekannt"
+
+
+def _is_tire_target(search_text: str) -> bool:
+    """Identify a configured tire-pressure target."""
+    return any(token in search_text for token in ("target", "soll", "recommended", "reference"))
+
+
+def _group_label(group: str, search_text: str, fallback: str) -> str:
+    """Translate known CarData signal families to concise German titles."""
+    if group == "doors":
+        if "front driver" in search_text or "front left" in search_text:
+            return "Fahrertür" if "door" in search_text else "Fenster vorne links"
+        if "front passenger" in search_text or "front right" in search_text:
+            return "Beifahrertür" if "door" in search_text else "Fenster vorne rechts"
+        if "rear driver" in search_text or "rear left" in search_text:
+            return "Hintertür links" if "door" in search_text else "Fenster hinten links"
+        if "rear passenger" in search_text or "rear right" in search_text:
+            return "Hintertür rechts" if "door" in search_text else "Fenster hinten rechts"
+        if "tailgate" in search_text or "trunk" in search_text:
+            return "Heckklappe"
+        if "hood" in search_text:
+            return "Motorhaube"
+        if "sunroof" in search_text:
+            return "Schiebedach"
+        if "doors overall" in search_text:
+            return "Türen"
+    if group == "climate":
+        if "preconditioning" in search_text or "climatization" in search_text:
+            return "Vorklimatisierung"
+        if "defrost" in search_text:
+            return "Entfrosten"
+        if "timer" in search_text:
+            return "Klimazeitplan"
+    if group == "service":
+        if "check control" in search_text:
+            return "Check-Control"
+        if "fault memory" in search_text:
+            return "Fehlerspeicher"
+        if "condition based service" in search_text:
+            return "Wartungsbedarf"
+    return fallback
 
 
 def _detect_electrification(

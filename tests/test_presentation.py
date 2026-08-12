@@ -46,3 +46,20 @@ def test_build_presentation_classifies_bev_and_ice():
 
     assert bev["electrification"] == "bev"
     assert ice["electrification"] == "ice"
+
+
+def test_build_presentation_adds_semantic_tire_metadata():
+    """The frontend receives wheel position and actual-versus-target roles."""
+    presentation = build_presentation(
+        VEHICLE,
+        [
+            snapshot("sensor.bmw_tire_pressure_front_left", "250", "Tire Pressure Front Left", "kPa"),
+            snapshot("sensor.bmw_tire_pressure_target_front_left", "230", "Tire Pressure Target Front Left", "kPa"),
+        ],
+    )
+
+    actual, target = presentation["groups"]["tires"]
+    assert actual["label"] == "Reifendruck Vorne links"
+    assert actual["position"] == "Vorne links"
+    assert actual["role"] == "actual"
+    assert target["role"] == "target"
