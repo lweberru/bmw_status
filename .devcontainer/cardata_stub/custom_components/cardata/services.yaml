@@ -1,0 +1,14 @@
+set_fixture_scenario:
+  name: Entwicklungsszenario setzen
+  description: Schaltet das lokale CarData-Fixture zwischen vollständigen BMW-Testzuständen um.
+  fields:
+    scenario:
+      name: Szenario
+      description: parked, driving oder attention
+      required: true
+      selector:
+        select:
+          options:
+            - parked
+            - driving
+            - attention

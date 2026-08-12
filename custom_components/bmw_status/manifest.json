@@ -1,0 +1,11 @@
+{
+  "domain": "bmw_status",
+  "name": "BMW Status",
+  "version": "0.2.1",
+  "codeowners": [],
+  "config_flow": true,
+  "after_dependencies": ["cardata"],
+  "integration_type": "service",
+  "iot_class": "calculated",
+  "requirements": []
+}

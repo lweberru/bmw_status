@@ -1,0 +1,9 @@
+homeassistant==2026.8.1
+home_assistant_frontend
+hassil
+paho_mqtt
+PyTurboJPEG
+pytest
+pytest_asyncio
+pytest_homeassistant_custom_component==0.13.355
+tqdm==4.67.1

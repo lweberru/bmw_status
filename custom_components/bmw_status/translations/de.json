@@ -1,0 +1,71 @@
+{
+  "config": {
+    "abort": {
+      "already_configured": "Dieses BMW-Fahrzeug ist bereits eingerichtet.",
+      "no_cardata_vehicles": "Es wurden keine BMW CarData Fahrzeuge gefunden. Richte zuerst bmw-cardata-ha ein.",
+      "vehicle_not_found": "Das ausgewählte BMW CarData Fahrzeug wurde nicht gefunden."
+    },
+    "step": {
+      "user": {
+        "title": "BMW Fahrzeug auswählen",
+        "description": "Wähle das Fahrzeug aus bmw-cardata-ha.",
+        "data": {
+          "cardata_device_id": "BMW Fahrzeug"
+        }
+      },
+      "card": {
+        "title": "Fahrzeugdarstellung",
+        "description": "Konfiguriere optionale Fahrzeugdaten.",
+        "data": {
+          "license_plate": "Kennzeichen"
+        }
+      },
+      "image_provider": {
+        "title": "Bildgenerierung",
+        "description": "Wähle den Provider für vorbereitete Fahrzeugbilder.",
+        "data": {
+          "enabled": "Bildgenerierung aktivieren",
+          "provider": "Bildprovider",
+          "view_mode": "Ansicht",
+          "scene_mode": "Szene"
+        }
+      },
+      "image_credentials": {
+        "title": "Provider-Zugang",
+        "description": "Der Schlüssel wird nur in den Optionen dieser Integration gespeichert.",
+        "data": {
+          "api_key": "Provider API Key",
+          "model": "Bildmodell",
+          "size": "Bildgröße"
+        }
+      }
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Fahrzeugdarstellung",
+        "data": {
+          "license_plate": "Kennzeichen"
+        }
+      },
+      "image_provider": {
+        "title": "Bildgenerierung",
+        "data": {
+          "enabled": "Bildgenerierung aktivieren",
+          "provider": "Bildprovider",
+          "view_mode": "Ansicht",
+          "scene_mode": "Szene"
+        }
+      },
+      "image_credentials": {
+        "title": "Provider-Zugang",
+        "data": {
+          "api_key": "Provider API Key",
+          "model": "Bildmodell",
+          "size": "Bildgröße"
+        }
+      }
+    }
+  }
+}

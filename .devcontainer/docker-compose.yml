@@ -1,0 +1,24 @@
+services:
+  homeassistant:
+    build:
+      context: ..
+      dockerfile: .devcontainer/Dockerfile
+    entrypoint: []
+    command: >-
+      bash -lc "if [ -f /opt/bmw_status_devcontainer/zscaler-root-ca.crt ]; then install -D -m 0644 /opt/bmw_status_devcontainer/zscaler-root-ca.crt /usr/local/share/ca-certificates/zscaler-root-ca.crt && update-ca-certificates && export BMW_STATUS_ZSCALER_COMPAT=1; fi; exec python -m homeassistant --config /config"
+    ports:
+      - "8123:8123"
+    environment:
+      PYTHONPATH: /opt/bmw_status_devcontainer/python
+    volumes:
+      - ..:/workspaces/bmw_status:cached
+      - ha_config:/config
+      - ../custom_components/bmw_status:/config/custom_components/bmw_status
+      - ${BMW_CARDATA_PATH:-./cardata_stub}/custom_components/cardata:/config/custom_components/cardata:ro
+      - ../../bmw_status_card/dist:/config/www/bmw-status-card:ro
+      - ./configuration.yaml:/config/configuration.yaml:ro
+      - ./ui-lovelace.yaml:/config/ui-lovelace.yaml:ro
+      - ./:/opt/bmw_status_devcontainer:ro
+
+volumes:
+  ha_config:

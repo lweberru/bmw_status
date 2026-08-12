@@ -1,0 +1,15 @@
+frontend:
+
+lovelace:
+  mode: yaml
+  resources:
+    - url: /local/bmw-status-card/bmw-status-card.js?v=0.2.1-service
+      type: module
+
+cardata:
+
+logger:
+  default: info
+  logs:
+    custom_components.bmw_status: debug
+    custom_components.cardata: debug

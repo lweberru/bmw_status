@@ -1,0 +1,7 @@
+title: BMW Status
+views:
+  - title: Fahrzeug
+    path: fahrzeug
+    cards:
+      - type: custom:bmw-status-card
+        entity: sensor.status

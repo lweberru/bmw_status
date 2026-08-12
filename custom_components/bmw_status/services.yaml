@@ -1,0 +1,32 @@
+refresh:
+  name: Aktualisieren
+  description: Aktualisiert die Fahrzeugprojektion aus den aktuellen BMW CarData Zuständen.
+  fields:
+    entry_id:
+      name: BMW Status Eintrag
+      description: Optional. Beschränkt die Aktion auf einen Config Entry.
+      required: false
+      selector:
+        text:
+
+regenerate_images:
+  name: Bilder neu erzeugen
+  description: Erzwingt die Neuerzeugung des Bildes für den aktuellen Fahrzeugzustand.
+  fields:
+    entry_id:
+      name: BMW Status Eintrag
+      description: Optional. Beschränkt die Aktion auf einen Config Entry.
+      required: false
+      selector:
+        text:
+
+clear_image_cache:
+  name: Bildcache leeren
+  description: Löscht die lokal gespeicherten Bilder und Metadaten des Fahrzeugs.
+  fields:
+    entry_id:
+      name: BMW Status Eintrag
+      description: Optional. Beschränkt die Aktion auf einen Config Entry.
+      required: false
+      selector:
+        text:
