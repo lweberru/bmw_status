@@ -6,7 +6,14 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
 
-from .const import DATA_COORDINATOR, DOMAIN
+from .const import (
+    CONF_MAP,
+    CONF_MAP_API_KEY,
+    CONF_MAP_ENABLED,
+    CONF_MAP_STYLE,
+    DATA_COORDINATOR,
+    DOMAIN,
+)
 from .coordinator import BMWStatusCoordinator
 from .services import async_register_services
 
@@ -14,19 +21,25 @@ PLATFORMS: tuple[Platform, ...] = (Platform.SENSOR,)
 
 
 async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    """Remove obsolete MapTiler options now owned by the frontend card."""
+    """Migrate legacy backend MapTiler options into the protected map block."""
     return _migrate_maptiler_options(hass, entry)
 
 
 def _migrate_maptiler_options(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    """Remove obsolete frontend-only options from an existing entry."""
-    if entry.version > 2:
+    """Preserve legacy backend MapTiler settings during entry migration."""
+    if entry.version > 4:
         return False
     options = dict(entry.options)
-    options.pop("maptiler_api_key", None)
-    options.pop("maptiler_style", None)
-    if entry.version < 2 or options != entry.options:
-        hass.config_entries.async_update_entry(entry, options=options, version=2)
+    legacy_key = str(options.pop("maptiler_api_key", "")).strip()
+    legacy_style = str(options.pop("maptiler_style", "")).strip()
+    if legacy_key and not isinstance(options.get(CONF_MAP), dict):
+        options[CONF_MAP] = {
+            CONF_MAP_ENABLED: True,
+            CONF_MAP_API_KEY: legacy_key,
+            CONF_MAP_STYLE: legacy_style or "base-v4",
+        }
+    if entry.version < 4 or options != entry.options:
+        hass.config_entries.async_update_entry(entry, options=options, version=4)
     return True
 
 

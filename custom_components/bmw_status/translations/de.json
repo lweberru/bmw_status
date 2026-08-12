@@ -27,7 +27,8 @@
           "enabled": "Bildgenerierung aktivieren",
           "provider": "Bildprovider",
           "view_mode": "Ansicht",
-          "scene_mode": "Szene"
+          "scene_mode": "Szene",
+          "replace_api_key": "Provider-Schlüssel ändern"
         }
       },
       "image_credentials": {
@@ -37,6 +38,23 @@
           "api_key": "Provider API Key",
           "model": "Bildmodell",
           "size": "Bildgröße"
+        }
+      },
+      "map_provider": {
+        "title": "Positionskarte",
+        "description": "Erstellt eine gecachte statische Karte im Backend.",
+        "data": {
+          "enabled": "Positionskarte aktivieren",
+          "replace_api_key": "MapTiler-Schlüssel ändern"
+        }
+      },
+      "map_credentials": {
+        "title": "MapTiler-Zugang",
+        "description": "Der Schlüssel wird nur in den Optionen dieser Integration gespeichert.",
+        "data": {
+          "api_key": "MapTiler API Key",
+          "style": "Kartenstil",
+          "zoom": "Zoom"
         }
       }
     }
@@ -55,7 +73,8 @@
           "enabled": "Bildgenerierung aktivieren",
           "provider": "Bildprovider",
           "view_mode": "Ansicht",
-          "scene_mode": "Szene"
+          "scene_mode": "Szene",
+          "replace_api_key": "Provider-Schlüssel ändern"
         }
       },
       "image_credentials": {
@@ -64,6 +83,21 @@
           "api_key": "Provider API Key",
           "model": "Bildmodell",
           "size": "Bildgröße"
+        }
+      },
+      "map_provider": {
+        "title": "Positionskarte",
+        "data": {
+          "enabled": "Positionskarte aktivieren",
+          "replace_api_key": "MapTiler-Schlüssel ändern"
+        }
+      },
+      "map_credentials": {
+        "title": "MapTiler-Zugang",
+        "data": {
+          "api_key": "MapTiler API Key",
+          "style": "Kartenstil",
+          "zoom": "Zoom"
         }
       }
     }

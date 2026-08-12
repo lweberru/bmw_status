@@ -19,6 +19,12 @@ CONF_IMAGE_SIZE: Final = "size"
 CONF_IMAGE_VIEW_MODE: Final = "view_mode"
 CONF_IMAGE_SCENE_MODE: Final = "scene_mode"
 
+CONF_MAP: Final = "map"
+CONF_MAP_ENABLED: Final = "enabled"
+CONF_MAP_API_KEY: Final = "api_key"
+CONF_MAP_STYLE: Final = "style"
+CONF_MAP_ZOOM: Final = "zoom"
+
 SERVICE_REFRESH: Final = "refresh"
 SERVICE_REGENERATE_IMAGES: Final = "regenerate_images"
 SERVICE_CLEAR_IMAGE_CACHE: Final = "clear_image_cache"

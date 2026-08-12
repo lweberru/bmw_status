@@ -7,11 +7,14 @@ from datetime import timedelta
 from enum import StrEnum
 import hashlib
 import json
+import logging
 from typing import Any, Awaitable, Callable
 
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.event import async_call_later
 from homeassistant.util import dt as dt_util
+
+_LOGGER = logging.getLogger(__name__)
 
 
 class ImageErrorKind(StrEnum):
@@ -51,7 +54,7 @@ class ImageJobManager:
         self._publish = publish
         self._debounce_seconds = debounce_seconds
         self._active = False
-        self._pending_key: str | None = None
+        self._pending_keys: list[str] = []
         self._scheduled_cancel: Callable[[], None] | None = None
         self._retry_after: str | None = None
         self._retry_attempts: dict[str, int] = {}
@@ -62,9 +65,11 @@ class ImageJobManager:
         if not force and retry_at and retry_at > dt_util.utcnow():
             self._publish(ImageJobState("error", "Bildgenerierung wartet auf Provider-Kontingent.", self._retry_after))
             return
-        if state_key == self._pending_key and not force:
+        if state_key in self._pending_keys and not force:
             return
-        self._pending_key = state_key
+        if force:
+            self._pending_keys = [key for key in self._pending_keys if key != state_key]
+        self._pending_keys.append(state_key)
         if self._scheduled_cancel:
             self._scheduled_cancel()
         self._scheduled_cancel = async_call_later(self._hass, self._debounce_seconds, self._async_start)
@@ -73,10 +78,9 @@ class ImageJobManager:
     async def _async_start(self, _now: Any) -> None:
         """Render one state; retain only the newest request while it is active."""
         self._scheduled_cancel = None
-        if self._active or not self._pending_key:
+        if self._active or not self._pending_keys:
             return
-        key = self._pending_key
-        self._pending_key = None
+        key = self._pending_keys.pop(0)
         self._active = True
         retry_scheduled = False
         try:
@@ -85,22 +89,21 @@ class ImageJobManager:
             self._retry_attempts.pop(key, None)
             self._publish(ImageJobState("ready"))
         except Exception as err:  # noqa: BLE001
+            _LOGGER.warning("Asset render failed for %s: %s", key, _safe_error_message(err))
             kind = classify_image_error(err)
             retry_after = self._set_retry_after(kind)
             self._publish(ImageJobState("error", _safe_error_message(err), retry_after))
             attempts = self._retry_attempts.get(key, 0) + 1
             self._retry_attempts[key] = attempts
             if kind in {ImageErrorKind.NETWORK, ImageErrorKind.PROVIDER, ImageErrorKind.TIMEOUT} and attempts <= 3:
-                self._pending_key = key
+                self._pending_keys.insert(0, key)
                 delay = 15 * (2 ** (attempts - 1))
                 self._scheduled_cancel = async_call_later(self._hass, delay, self._async_start)
                 retry_scheduled = True
         finally:
             self._active = False
-            if self._pending_key and not retry_scheduled:
-                next_key = self._pending_key
-                self._pending_key = None
-                self.async_request(next_key)
+            if self._pending_keys and not retry_scheduled:
+                self._scheduled_cancel = async_call_later(self._hass, 0, self._async_start)
 
     def _set_retry_after(self, kind: ImageErrorKind) -> str | None:
         """Return a retry deadline only for errors that must block jobs."""

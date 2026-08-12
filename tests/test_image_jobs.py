@@ -63,7 +63,26 @@ async def test_image_job_network_failure_schedules_retry(hass):
     await manager._async_start(None)
 
     assert manager._retry_attempts == {"state": 1}
-    assert manager._pending_key == "state"
+    assert manager._pending_keys == ["state"]
     assert manager._scheduled_cancel is not None
     assert published[-1].status == "error"
+    manager.async_shutdown()
+
+
+async def test_image_job_processes_state_and_tire_assets(hass):
+    """Distinct vehicle assets stay queued and render serially."""
+    rendered: list[str] = []
+
+    async def render(state_key: str) -> None:
+        rendered.append(state_key)
+
+    manager = ImageJobManager(hass, render, lambda _state: None)
+
+    manager.async_request("state-vehicle")
+    manager.async_request("tire-vehicle")
+    manager.async_shutdown()
+    await manager._async_start(None)
+    await manager._async_start(None)
+
+    assert rendered == ["state-vehicle", "tire-vehicle"]
     manager.async_shutdown()

@@ -24,6 +24,11 @@ from .const import (
     CONF_IMAGE_SIZE,
     CONF_IMAGE_VIEW_MODE,
     CONF_LICENSE_PLATE,
+    CONF_MAP,
+    CONF_MAP_API_KEY,
+    CONF_MAP_ENABLED,
+    CONF_MAP_STYLE,
+    CONF_MAP_ZOOM,
     DOMAIN,
 )
 
@@ -51,7 +56,7 @@ def _cardata_vehicle_options(hass: HomeAssistant) -> dict[str, str]:
 class BMWStatusConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """Configure one BMW Status entry per CarData vehicle."""
 
-    VERSION = 2
+    VERSION = 4
 
     def __init__(self) -> None:
         """Initialize the multi-step setup state."""
@@ -103,7 +108,7 @@ class BMWStatusConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             self._options[CONF_IMAGE] = dict(user_input)
             if user_input[CONF_IMAGE_ENABLED]:
                 return await self.async_step_image_credentials()
-            return self._async_create_config_entry()
+            return await self.async_step_map_provider()
         return self.async_show_form(
             step_id="image_provider",
             data_schema=vol.Schema(
@@ -122,7 +127,7 @@ class BMWStatusConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         provider = image_options[CONF_IMAGE_PROVIDER]
         if user_input is not None:
             image_options.update(user_input)
-            return self._async_create_config_entry()
+            return await self.async_step_map_provider()
         default_model = "gemini-2.5-flash-image" if provider == "gemini" else "gpt-image-1"
         schema: dict[Any, Any] = {
             vol.Required(CONF_IMAGE_API_KEY): str,
@@ -131,6 +136,34 @@ class BMWStatusConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         if provider == "openai":
             schema[vol.Required(CONF_IMAGE_SIZE, default="1024x1024")] = vol.In(OPENAI_SIZES)
         return self.async_show_form(step_id="image_credentials", data_schema=vol.Schema(schema))
+
+    async def async_step_map_provider(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Configure an optional backend-cached static location map."""
+        if user_input is not None:
+            self._options[CONF_MAP] = dict(user_input)
+            if user_input[CONF_MAP_ENABLED]:
+                return await self.async_step_map_credentials()
+            return self._async_create_config_entry()
+        return self.async_show_form(
+            step_id="map_provider",
+            data_schema=vol.Schema({vol.Required(CONF_MAP_ENABLED, default=False): bool}),
+        )
+
+    async def async_step_map_credentials(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Collect MapTiler credentials that remain in backend entry options."""
+        if user_input is not None:
+            self._options[CONF_MAP].update(user_input)
+            return self._async_create_config_entry()
+        return self.async_show_form(
+            step_id="map_credentials",
+            data_schema=vol.Schema(
+                {
+                    vol.Required(CONF_MAP_API_KEY): str,
+                    vol.Optional(CONF_MAP_STYLE, default="streets-v4"): str,
+                    vol.Optional(CONF_MAP_ZOOM, default=14): vol.All(vol.Coerce(int), vol.Range(min=1, max=20)),
+                }
+            ),
+        )
 
     def _async_create_config_entry(self) -> ConfigFlowResult:
         """Create the selected vehicle entry with all backend options."""
@@ -173,10 +206,14 @@ class BMWStatusOptionsFlow(OptionsFlow):
         """Edit the image provider mode."""
         current = dict(self._options.get(CONF_IMAGE) or {})
         if user_input is not None:
-            self._options[CONF_IMAGE] = {**current, **user_input}
-            if user_input[CONF_IMAGE_ENABLED]:
+            image = {**current, **user_input}
+            replace_key = bool(image.pop("replace_api_key", False))
+            self._options[CONF_IMAGE] = image
+            provider_changed = image[CONF_IMAGE_PROVIDER] != current.get(CONF_IMAGE_PROVIDER)
+            has_key = bool(str(image.get(CONF_IMAGE_API_KEY) or "").strip())
+            if image[CONF_IMAGE_ENABLED] and (replace_key or provider_changed or not has_key):
                 return await self.async_step_image_credentials()
-            return self.async_create_entry(title="", data=self._options)
+            return await self.async_step_map_provider()
         return self.async_show_form(
             step_id="image_provider",
             data_schema=vol.Schema(
@@ -185,6 +222,7 @@ class BMWStatusOptionsFlow(OptionsFlow):
                     vol.Required(CONF_IMAGE_PROVIDER, default=current.get(CONF_IMAGE_PROVIDER, "gemini")): vol.In(IMAGE_PROVIDERS),
                     vol.Required(CONF_IMAGE_VIEW_MODE, default=current.get(CONF_IMAGE_VIEW_MODE, "auto")): vol.In(("auto", "front_left", "rear_right")),
                     vol.Required(CONF_IMAGE_SCENE_MODE, default=current.get(CONF_IMAGE_SCENE_MODE, "auto")): vol.In(("auto", "parked", "driving")),
+                    vol.Optional("replace_api_key", default=False): bool,
                 }
             ),
         )
@@ -198,7 +236,7 @@ class BMWStatusOptionsFlow(OptionsFlow):
             if key:
                 image[CONF_IMAGE_API_KEY] = key
             image.update(user_input)
-            return self.async_create_entry(title="", data=self._options)
+            return await self.async_step_map_provider()
         default_model = image.get(CONF_IMAGE_MODEL) or (
             "gemini-2.5-flash-image" if provider == "gemini" else "gpt-image-1"
         )
@@ -209,3 +247,44 @@ class BMWStatusOptionsFlow(OptionsFlow):
         if provider == "openai":
             schema[vol.Required(CONF_IMAGE_SIZE, default=image.get(CONF_IMAGE_SIZE, "1024x1024"))] = vol.In(OPENAI_SIZES)
         return self.async_show_form(step_id="image_credentials", data_schema=vol.Schema(schema))
+
+    async def async_step_map_provider(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Edit the backend-cached static location map configuration."""
+        current = dict(self._options.get(CONF_MAP) or {})
+        if user_input is not None:
+            map_options = {**current, **user_input}
+            replace_key = bool(map_options.pop("replace_api_key", False))
+            self._options[CONF_MAP] = map_options
+            has_key = bool(str(map_options.get(CONF_MAP_API_KEY) or "").strip())
+            if map_options[CONF_MAP_ENABLED] and (replace_key or not has_key):
+                return await self.async_step_map_credentials()
+            return self.async_create_entry(title="", data=self._options)
+        return self.async_show_form(
+            step_id="map_provider",
+            data_schema=vol.Schema(
+                {
+                    vol.Required(CONF_MAP_ENABLED, default=current.get(CONF_MAP_ENABLED, False)): bool,
+                    vol.Optional("replace_api_key", default=False): bool,
+                }
+            ),
+        )
+
+    async def async_step_map_credentials(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Edit MapTiler credentials without exposing an existing key."""
+        map_options = self._options[CONF_MAP]
+        if user_input is not None:
+            key = str(user_input.pop(CONF_MAP_API_KEY, "")).strip()
+            if key:
+                map_options[CONF_MAP_API_KEY] = key
+            map_options.update(user_input)
+            return self.async_create_entry(title="", data=self._options)
+        return self.async_show_form(
+            step_id="map_credentials",
+            data_schema=vol.Schema(
+                {
+                    vol.Optional(CONF_MAP_API_KEY, default=""): str,
+                    vol.Optional(CONF_MAP_STYLE, default=map_options.get(CONF_MAP_STYLE, "streets-v4")): str,
+                    vol.Optional(CONF_MAP_ZOOM, default=map_options.get(CONF_MAP_ZOOM, 14)): vol.All(vol.Coerce(int), vol.Range(min=1, max=20)),
+                }
+            ),
+        )

@@ -2,7 +2,7 @@
 
 `bmw_status` ist das Backend für `bmw-status-card`.
 
-Version: 0.2.2
+Version: 0.2.4
 
 ## Aktueller Stand
 
@@ -19,8 +19,9 @@ mit Gemini- oder OpenAI-Optionen in Phase 4 aktiviert.
 4. Wähle das Fahrzeug im Dropdown aus und konfiguriere optional das Kennzeichen.
 5. Aktiviere die Bildgenerierung mit Gemini oder OpenAI, falls vorbereitete Bilder gewünscht sind.
 
-MapTiler bleibt eine ausschliesslich frontendseitige Einstellung der Karte und
-wird nicht im Backend gespeichert oder vom Sensor veroeffentlicht.
+Die Positionskarte wird im Backend mit MapTiler erzeugt, lokal gecacht und als
+Bild-URL im Praesentationsvertrag veroeffentlicht. Der MapTiler-Schluessel bleibt
+im Config Entry und wird weder an den Browser noch ueber den Sensor weitergegeben.
 
 ## Backend-Aktionen
 

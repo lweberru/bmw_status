@@ -3,16 +3,22 @@
 from __future__ import annotations
 
 from datetime import datetime
+from io import BytesIO
 import logging
+import math
+import ssl
 from typing import Any, Callable
+from urllib.parse import quote, urlencode
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import Event, HomeAssistant, callback
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
+from homeassistant.helpers import aiohttp_client
 from homeassistant.helpers.event import async_track_state_change_event
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from homeassistant.util import dt as dt_util
+from PIL import Image
 
 from .const import (
     CARDATA_DOMAIN,
@@ -20,6 +26,11 @@ from .const import (
     CONF_IMAGE,
     CONF_IMAGE_ENABLED,
     CONF_LICENSE_PLATE,
+    CONF_MAP,
+    CONF_MAP_API_KEY,
+    CONF_MAP_ENABLED,
+    CONF_MAP_STYLE,
+    CONF_MAP_ZOOM,
     DOMAIN,
     PRESENTATION_SCHEMA_VERSION,
 )
@@ -47,6 +58,7 @@ class BMWStatusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._image_store = ImageStore(hass, entry.entry_id)
         self._image_index: dict[str, Any] = {"version": 1, "images": {}}
         self._image_jobs = ImageJobManager(hass, self._async_render_image, self._publish_image_state)
+        self._map_jobs = ImageJobManager(hass, self._async_render_image, self._publish_image_state)
 
     async def async_start(self) -> None:
         """Subscribe to the current CarData entities for this vehicle."""
@@ -61,6 +73,7 @@ class BMWStatusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             self._unsub_state_changes()
             self._unsub_state_changes = None
         self._image_jobs.async_shutdown()
+        self._map_jobs.async_shutdown()
 
     @callback
     def _async_handle_state_change(self, _event: Event) -> None:
@@ -79,21 +92,35 @@ class BMWStatusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
     async def _async_render_image(self, state_key: str) -> None:
         """Render the latest state and persist its image plus cache metadata."""
-        config = self._image_config()
-        if not config:
-            return
         presentation = (self.data or {}).get("presentation") or {}
-        prompt = self._build_state_render_prompt(presentation)
-        image = await async_generate_state_render(self.hass, config, prompt)
-        filename = f"state-{state_key}.png"
+        if state_key.startswith("map-"):
+            map_config = self._map_config()
+            if not map_config:
+                return
+            image = await self._async_fetch_location_map(map_config, presentation)
+            prompt = "MapTiler static location map"
+            asset = "map"
+            provider = "maptiler"
+            model = str(map_config["style"])
+        else:
+            config = self._image_config()
+            if not config:
+                return
+            is_tire_render = state_key.startswith("tire-")
+            prompt = self._build_tire_render_prompt(presentation) if is_tire_render else self._build_state_render_prompt(presentation)
+            image = await async_generate_state_render(self.hass, config, prompt)
+            asset = "tire" if is_tire_render else "state"
+            provider = config.provider
+            model = config.model
+        filename = f"{asset}-{state_key}.png"
         local_url = await self._image_store.async_write_png(self.hass, filename, image)
         self._image_index.setdefault("images", {})[state_key] = {
             "filename": filename,
             "local_url": local_url,
             "status": "ready",
             "prompt": prompt,
-            "provider": config.provider,
-            "model": config.model,
+            "provider": provider,
+            "model": model,
             "updated_at": _utc_timestamp(),
         }
         await self._image_store.async_save(self.hass, self._image_index)
@@ -101,12 +128,21 @@ class BMWStatusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
     async def async_regenerate_images(self) -> None:
         """Force regeneration of the current state when image generation is enabled."""
-        if not self._image_config() or not self.data:
+        if not self.data:
             return
-        state_key = presentation_key(self.data.get("presentation") or {})
-        self._image_index.get("images", {}).pop(state_key, None)
+        presentation = self.data.get("presentation") or {}
+        state_key = f"state-{presentation_key(presentation)}"
+        tire_key = f"tire-{presentation_key({'vehicle': presentation.get('vehicle') or {}, 'asset': 'tire_top_down'})}"
+        map_key = self._location_map_key(presentation)
+        if self._image_config():
+            self._image_index.get("images", {}).pop(state_key, None)
+            self._image_index.get("images", {}).pop(tire_key, None)
+            self._image_jobs.async_request(state_key, force=True)
+            self._image_jobs.async_request(tire_key, force=True)
+        if self._map_config() and map_key:
+            self._image_index.get("images", {}).pop(map_key, None)
+            self._map_jobs.async_request(map_key, force=True)
         await self._image_store.async_save(self.hass, self._image_index)
-        self._image_jobs.async_request(state_key, force=True)
 
     async def async_clear_image_cache(self) -> None:
         """Clear this vehicle's image cache without affecting other entries."""
@@ -133,6 +169,67 @@ class BMWStatusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             model=str(options.get("model") or default_model),
             size=str(options.get("size") or "1024x1024"),
         )
+
+    def _map_config(self) -> dict[str, Any] | None:
+        """Read MapTiler credentials kept only in config-entry options."""
+        options = self.entry.options.get(CONF_MAP)
+        if not isinstance(options, dict) or not options.get(CONF_MAP_ENABLED):
+            return None
+        api_key = str(options.get(CONF_MAP_API_KEY) or "").strip()
+        if not api_key:
+            return None
+        return {
+            "api_key": api_key,
+            "style": str(options.get(CONF_MAP_STYLE) or "streets-v4").strip(),
+            "zoom": int(options.get(CONF_MAP_ZOOM) or 14),
+        }
+
+    def _location_map_key(self, presentation: dict[str, Any]) -> str | None:
+        """Build a cache key from the current location and requested map style."""
+        config = self._map_config()
+        tracker = (presentation.get("entities") or {}).get("device_tracker") or {}
+        latitude = tracker.get("latitude")
+        longitude = tracker.get("longitude")
+        if not config or not isinstance(latitude, (int, float)) or not isinstance(longitude, (int, float)):
+            return None
+        return f"map-{presentation_key({'latitude': latitude, 'longitude': longitude, 'style': config['style'], 'zoom': config['zoom']})}"
+
+    async def _async_fetch_location_map(self, config: dict[str, Any], presentation: dict[str, Any]) -> bytes:
+        """Build a static map from server-fetched tiles without exposing the API key."""
+        tracker = (presentation.get("entities") or {}).get("device_tracker") or {}
+        latitude = tracker.get("latitude")
+        longitude = tracker.get("longitude")
+        if not isinstance(latitude, (int, float)) or not isinstance(longitude, (int, float)):
+            raise RuntimeError("Vehicle location is unavailable for the map")
+        zoom = int(config["zoom"])
+        tile_count = 2**zoom
+        world_x = (longitude + 180) / 360 * tile_count
+        latitude_radians = math.radians(max(min(latitude, 85.05112878), -85.05112878))
+        world_y = (1 - math.asinh(math.tan(latitude_radians)) / math.pi) / 2 * tile_count
+        center_x = int(world_x)
+        center_y = int(world_y)
+        style = quote(str(config["style"]), safe="-")
+        query = urlencode({"key": config["api_key"]})
+        session = aiohttp_client.async_get_clientsession(self.hass)
+        ssl_context = ssl.create_default_context()
+        tile_image = Image.new("RGB", (768, 768))
+        for row, tile_y in enumerate(range(center_y - 1, center_y + 2)):
+            if tile_y < 0 or tile_y >= tile_count:
+                continue
+            for column, tile_x in enumerate(range(center_x - 1, center_x + 2)):
+                wrapped_x = tile_x % tile_count
+                url = f"https://api.maptiler.com/maps/{style}/{zoom}/{wrapped_x}/{tile_y}.png?{query}"
+                async with session.get(url, ssl=ssl_context) as response:
+                    if response.status >= 400:
+                        raise RuntimeError(f"MapTiler tile failed: {response.status}")
+                    image = Image.open(BytesIO(await response.read())).convert("RGB")
+                tile_image.paste(image, (column * 256, row * 256))
+        pixel_x = (world_x - center_x + 1) * 256
+        pixel_y = (world_y - center_y + 1) * 256
+        crop = tile_image.crop((round(pixel_x - 320), round(pixel_y - 140), round(pixel_x + 320), round(pixel_y + 140)))
+        output = BytesIO()
+        crop.save(output, format="PNG")
+        return output.getvalue()
 
     def _build_state_render_prompt(self, presentation: dict[str, Any]) -> str:
         """Build a full-frame prompt from the semantic presentation."""
@@ -167,14 +264,33 @@ class BMWStatusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "Use vehicle-relative left and right; do not mirror the vehicle."
         ).replace("  ", " ").strip()
 
+    def _build_tire_render_prompt(self, presentation: dict[str, Any]) -> str:
+        """Build a stable, top-down vehicle reference image for tire placement."""
+        vehicle = presentation.get("vehicle") or {}
+        identity = " ".join(
+            str(vehicle.get(field) or "").strip()
+            for field in ("year", "color", "manufacturer", "model", "series", "trim", "body")
+            if str(vehicle.get(field) or "").strip()
+        ) or str(vehicle.get("name") or "BMW")
+        return (
+            f"Photorealistic true top-down orthographic studio image of exactly this vehicle: {identity}. "
+            "Show the complete car centered, with all four wheels fully visible, vehicle front at the top, "
+            "on a plain transparent or light neutral background. No people, text, labels, shadows, scenery, "
+            "cut-off parts, perspective view, or mirrored orientation."
+        )
+
     async def _async_update_data(self) -> dict[str, Any]:
         """Build the current presentation from the configured CarData device."""
         device_id = self.entry.data[CONF_CARDATA_DEVICE_ID]
         vehicle = self._vehicle_metadata(device_id)
         entities = self._entity_snapshots(device_id)
         presentation = build_presentation(vehicle, entities)
-        state_key = presentation_key(presentation)
+        state_key = f"state-{presentation_key(presentation)}"
+        tire_key = f"tire-{presentation_key({'vehicle': presentation.get('vehicle') or {}, 'asset': 'tire_top_down'})}"
         cached_image = self._image_index.get("images", {}).get(state_key)
+        cached_tire_image = self._image_index.get("images", {}).get(tire_key)
+        map_key = self._location_map_key(presentation)
+        cached_map_image = self._image_index.get("images", {}).get(map_key) if map_key else None
         image_configured = self._image_config() is not None
         if image_configured and cached_image and await self._image_store.async_exists(self.hass, str(cached_image.get("filename") or "")):
             presentation["images"] = [str(cached_image["local_url"])]
@@ -182,6 +298,16 @@ class BMWStatusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         elif image_configured:
             self._image_jobs.async_request(state_key)
         else:
+            self._image_state = ImageJobState("disabled")
+        if image_configured and cached_tire_image and await self._image_store.async_exists(self.hass, str(cached_tire_image.get("filename") or "")):
+            presentation["tire_image"] = str(cached_tire_image["local_url"])
+        elif image_configured:
+            self._image_jobs.async_request(tire_key)
+        if map_key and cached_map_image and await self._image_store.async_exists(self.hass, str(cached_map_image.get("filename") or "")):
+            presentation["location_image"] = str(cached_map_image["local_url"])
+        elif map_key:
+            self._map_jobs.async_request(map_key)
+        elif not image_configured:
             self._image_state = ImageJobState("disabled")
         return {
             "schema_version": PRESENTATION_SCHEMA_VERSION,

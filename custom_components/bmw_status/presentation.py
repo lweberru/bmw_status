@@ -179,13 +179,20 @@ def _matches(
     return sorted(candidates, key=lambda entity: (_is_unavailable(entity.state), entity.name, entity.entity_id))
 
 
-def _entity_data(entity: EntitySnapshot | None) -> dict[str, str] | None:
+def _entity_data(entity: EntitySnapshot | None) -> dict[str, Any] | None:
     """Return the serializable representation consumed by the frontend."""
     if not entity:
         return None
     data = {"entity_id": entity.entity_id, "name": entity.name, "state": entity.state}
     if entity.unit:
         data["unit"] = entity.unit
+    if entity.domain == "device_tracker":
+        attributes = entity.attributes or {}
+        latitude = _number(str(attributes.get("latitude") or ""))
+        longitude = _number(str(attributes.get("longitude") or ""))
+        if latitude is not None and longitude is not None:
+            data["latitude"] = latitude
+            data["longitude"] = longitude
     return data
 
 
@@ -316,7 +323,8 @@ def _is_unavailable(value: str) -> bool:
 
 def _is_open(value: str) -> bool:
     """Recognize an opening state across common CarData values."""
-    return _normalize(value) in {"on", "true", "1", "yes", "open", "opened"}
+    state = _normalize(value)
+    return state in {"on", "true", "1", "yes", "open", "opened"} or "open" in state or "tilt" in state
 
 
 def _number(value: str) -> float | None:
