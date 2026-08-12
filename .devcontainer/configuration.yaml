@@ -3,7 +3,7 @@ frontend:
 lovelace:
   mode: yaml
   resources:
-    - url: /local/bmw-status-card/bmw-status-card.js?v=0.2.1-service
+    - url: /local/bmw-status-card/bmw-status-card.js?v=dev-mvp-7
       type: module
 
 cardata:

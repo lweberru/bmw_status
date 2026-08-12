@@ -1,82 +1,62 @@
 # BMW Status
 
-`bmw_status` ist das Backend für `bmw-status-card`.
+[Deutsch](README.de.md) | [BMW Status Card frontend](https://github.com/lweberru/bmw_status_card)
+
+BMW Status is the Home Assistant backend integration for the
+[BMW Status Card](https://github.com/lweberru/bmw_status_card). They are designed
+to be used together: this integration turns the entities supplied by
+`bmw-cardata-ha` into a versioned presentation contract, while the card renders
+that contract without querying vehicle providers in the browser.
 
 Version: 0.2.4
 
-## Aktueller Stand
+## Features
 
-Die Integration kann pro `bmw-cardata-ha`-Fahrzeug eingerichtet werden und stellt
-`sensor.bmw_status_<fahrzeug>_status` bereit. Der Sensor veröffentlicht einen
-versionierten Präsentationsvertrag. Die Integration klassifiziert bereits die
-CarData-Entities und beobachtet deren Zustände reaktiv. Die interne Bildpipeline
-speichert PNG-Dateien und JSON-Metadaten unter `/config/www/bmw_status/` und wird
-mit Gemini- oder OpenAI-Optionen in Phase 4 aktiviert.
+- One configuration entry and status sensor per `bmw-cardata-ha` vehicle.
+- A versioned `presentation` attribute with vehicle, energy, range, opening,
+	tire-pressure, service and climate data.
+- Server-side generated and cached vehicle images and MapTiler location maps.
+- MapTiler and image-provider credentials remain in the backend configuration;
+	they are never exposed to the browser or published through the sensor.
+- Services to refresh data and manage cached image assets.
 
-1. Installiere und richte `bmw-cardata-ha` mit mindestens einem Fahrzeug ein.
-2. Füge dieses Repository in HACS als Custom Repository vom Typ **Integration** hinzu und installiere **BMW Status**.
-3. Füge **BMW Status** über Einstellungen > Geräte & Dienste hinzu.
-4. Wähle das Fahrzeug im Dropdown aus und konfiguriere optional das Kennzeichen.
-5. Aktiviere die Bildgenerierung mit Gemini oder OpenAI, falls vorbereitete Bilder gewünscht sind.
+## Requirements
 
-Die Positionskarte wird im Backend mit MapTiler erzeugt, lokal gecacht und als
-Bild-URL im Praesentationsvertrag veroeffentlicht. Der MapTiler-Schluessel bleibt
-im Config Entry und wird weder an den Browser noch ueber den Sensor weitergegeben.
+1. Install and configure `bmw-cardata-ha` with at least one vehicle.
+2. Install this repository through HACS as an **Integration**.
+3. Install the companion [BMW Status Card frontend](https://github.com/lweberru/bmw_status_card)
+	 through HACS as a **Frontend** plugin.
 
-## Backend-Aktionen
+## Setup
 
-- `bmw_status.refresh`: Aktualisiert die Präsentation aus den CarData-States.
-- `bmw_status.regenerate_images`: Erzwingt ein neues Bild für den aktuellen Zustand.
-- `bmw_status.clear_image_cache`: Löscht ausschließlich den lokalen Bildcache des gewählten Fahrzeugs.
+1. In Home Assistant, open **Settings → Devices & services → Add integration**.
+2. Select **BMW Status**.
+3. Select the CarData vehicle and configure the optional vehicle details.
+4. Configure server-side map and image providers when required.
+5. Add a BMW Status Card for the generated sensor, for example `sensor.status`.
 
-Alle Aktionen akzeptieren optional `entry_id`, um bei mehreren Fahrzeugen nur einen
-Config Entry anzusprechen.
+The status sensor publishes `attributes.presentation`. Use that attribute only
+through the companion card; it is the stable display contract between the
+backend and frontend.
 
-Die Konfiguration von Provider, Modell und Bildverhalten folgt in Phase 4.
+## Services
 
-## Lokale Home-Assistant-Entwicklung
+- `bmw_status.refresh`: Refreshes the presentation from the current CarData states.
+- `bmw_status.regenerate_images`: Regenerates cached visual assets for an entry.
+- `bmw_status.clear_image_cache`: Clears only the local asset cache for an entry.
 
-Der Dev Container startet Home Assistant unter `http://localhost:8123`, bindet
-`bmw_status` ein und stellt standardmäßig eine lokale CarData-Fixture bereit.
+All services accept an optional `entry_id`, which is useful with multiple vehicles.
 
-1. Öffne den Ordner `bmw_status` in VS Code und wähle **Reopen in Container**.
-2. Rufe `http://localhost:8123` auf und schließe die lokale Home-Assistant-Ersteinrichtung ab.
-3. Die Dev-Umgebung stellt standardmäßig eine lokale CarData-Fixture mit dem Gerät **BMW Status Dev Vehicle** bereit. Füge danach **BMW Status** über Geräte & Dienste hinzu und wähle dieses Gerät.
-4. Die lokale Kartenansicht ist unter `http://localhost:8123/lovelace/fahrzeug` verfügbar und liest `sensor.status`.
+## Local development
 
-Die Fixture stellt vollständige Fahrzeugwerte für Verriegelung, Laden, Energie,
-Reichweiten, Kilometerstand, Öffnungen, Reifen, Service und Klima bereit. Zum
-Umschalten rufe in **Entwicklerwerkzeuge → Aktionen**
-`cardata.set_fixture_scenario` mit einem dieser Werte auf:
+The dev container starts Home Assistant at `http://localhost:8123` with a local,
+production-shaped CarData fixture.
 
-- `parked`: Normaler, geparkter Fahrzeugzustand.
-- `driving`: Fahrzustand mit aktualisierten Reichweiten und aktivem Klima.
-- `attention`: Geparktes Fahrzeug mit niedrigem Tank, offenen Öffnungen und zu niedrigem Reifendruck.
+1. Open the `bmw_status` folder in VS Code and choose **Reopen in Container**.
+2. Open `http://localhost:8123` and complete Home Assistant onboarding.
+3. Add **BMW Status** and select the fixture vehicle.
+4. Open `http://localhost:8123/lovelace/fahrzeug` to inspect the companion card.
 
-Alternativ mit dem lokalen API-Helfer:
-
-```sh
-python3 tools/ha_api_read.py --local call cardata set_fixture_scenario --data scenario=attention
-```
-
-Die Karte wird über die bestehenden `bmw_status`-Subscriptions automatisch
-aktualisiert. Ein zusätzlicher `bmw_status.refresh` ist nur hilfreich, wenn ein
-expliziter Aktualisierungspunkt getestet werden soll.
-
-Falls `bmw-cardata-ha` nicht neben diesem Repository liegt, setze vor dem Start
-`BMW_CARDATA_PATH` auf dessen lokalen Repository-Pfad. Der Pfad muss auf einen
-Ordner zeigen, der `custom_components/cardata` enthält. Damit ersetzt die echte
-CarData-Integration die lokale Fixture; dafür werden gültige BMW-Zugangsdaten benötigt.
-
-In einem Zscaler-Netzwerk exportiere die lokal installierte Root-CA nach
-`.devcontainer/zscaler-root-ca.crt` und erstelle den Container neu. Die Datei
-wird nicht versioniert und beim Start in den Container-Truststore importiert.
-Der Dev Container verwendet das offizielle Image
-`ghcr.io/home-assistant/home-assistant:2026.8.1` (Python 3.14) und eine lokale,
-begrenzte SSL-Kompatibilitätsanpassung für die ältere Zscaler-Root-CA. Die
-reguläre Zertifikats- und Hostnamenprüfung bleibt aktiviert.
-
-Die persistente lokale Home-Assistant-Konfiguration liegt im Docker-Volume
-`bmw_status_devcontainer_ha_config`. Sie enthält lokale Zugangsdaten und
-Provider-Schlüssel und wird nicht in Git gespeichert. Zum vollständigen
-Zurücksetzen lösche dieses Docker-Volume über Docker Desktop.
+The fixture supports `parked`, `driving` and `attention` scenarios through the
+`cardata.set_fixture_scenario` action. It is intentionally local only and is not
+needed for production installation.

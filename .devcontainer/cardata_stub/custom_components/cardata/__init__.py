@@ -7,7 +7,7 @@ from homeassistant.core import HomeAssistant, ServiceCall
 import voluptuous as vol
 
 DOMAIN = "cardata"
-PLATFORMS = ("sensor",)
+PLATFORMS = ("sensor", "device_tracker")
 SERVICE_SET_FIXTURE_SCENARIO = "set_fixture_scenario"
 SCENARIO_SCHEMA = vol.Schema({vol.Required("scenario"): vol.In(("parked", "driving", "attention"))})
 

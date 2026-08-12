@@ -6,6 +6,7 @@ from collections.abc import Mapping
 
 from homeassistant.components.sensor import SensorEntity
 from homeassistant.const import PERCENTAGE
+from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.entity import DeviceInfo
 
 from . import DOMAIN
@@ -13,52 +14,64 @@ from . import DOMAIN
 DEVICE_INFO = DeviceInfo(
     identifiers={(DOMAIN, "BMW_STATUS_DEV_VEHICLE")},
     manufacturer="BMW",
-    model="Development Vehicle",
-    name="BMW Status Dev Vehicle",
+    model="320d xDrive",
+    name="BMW 320d xDrive",
 )
 
 
 SENSOR_DEFINITIONS = {
-    "lock": ("Lock Status", None),
-    "charging": ("Charging Status", None),
-    "soc": ("State of Charge", PERCENTAGE),
-    "fuel": ("Remaining Fuel", "L"),
-    "electric_range": ("Remaining Electric Range", "km"),
-    "total_range": ("Remaining Range", "km"),
-    "odometer": ("Travelled Distance", "km"),
-    "motion": ("Vehicle Motion State", None),
-    "door": ("Driver Door", None),
-    "passenger_door": ("Passenger Door", None),
-    "tailgate": ("Tailgate", None),
-    "tire": ("Tire Pressure Front Left", "kPa"),
-    "tire_front_right": ("Tire Pressure Front Right", "kPa"),
-    "tire_rear_left": ("Tire Pressure Rear Left", "kPa"),
-    "tire_rear_right": ("Tire Pressure Rear Right", "kPa"),
-    "service": ("Condition Based Service", None),
-    "climate": ("Preconditioning", None),
+    "lock": ("Doors overall state", None),
+    "fuel": ("Range Tank level (%)", PERCENTAGE),
+    "total_range": ("Range Total range (last sent)", "km"),
+    "odometer": ("Vehicle mileage", "km"),
+    "motion": ("Vehicle Motion state", None),
+    "door_front_driver": ("Door state (front driver)", None),
+    "door_front_passenger": ("Door state (front passenger)", None),
+    "door_rear_driver": ("Door state (rear driver)", None),
+    "door_rear_passenger": ("Door state (rear passenger)", None),
+    "hood": ("Hood state", None),
+    "tailgate": ("Tailgate state", None),
+    "sunroof": ("Sunroof overall state", None),
+    "sunroof_tilt": ("Sunroof tilt state", None),
+    "tire": ("Tire pressure (front left)", "kPa"),
+    "tire_front_right": ("Tire pressure (front right)", "kPa"),
+    "tire_rear_left": ("Tire pressure (rear left)", "kPa"),
+    "tire_rear_right": ("Tire pressure (rear right)", "kPa"),
+    "tire_target_front_left": ("Tire Pressure Target Front Left", "kPa"),
+    "tire_target_front_right": ("Tire Pressure Target Front Right", "kPa"),
+    "tire_target_rear_left": ("Tire Pressure Target Rear Left", "kPa"),
+    "tire_target_rear_right": ("Tire Pressure Target Rear Right", "kPa"),
+    "climate": ("Preconditioning state", None),
+    "climate_timer": ("Climate Timer Next-Only state", None),
 }
 
 SCENARIOS: dict[str, dict[str, str | int]] = {
     "parked": {
-        "lock": "locked", "charging": "off", "soc": 78, "fuel": 42,
-        "electric_range": 48, "total_range": 560, "odometer": 22450, "motion": "parked",
-        "door": "off", "passenger_door": "off", "tailgate": "off",
-        "tire": 235, "tire_front_right": 234, "tire_rear_left": 231, "tire_rear_right": 232,
-        "service": "normal", "climate": "off",
+        "lock": "SECURED", "fuel": 88, "total_range": 744, "odometer": 18255, "motion": "off",
+        "door_front_driver": "off", "door_front_passenger": "off", "door_rear_driver": "off", "door_rear_passenger": "off",
+        "hood": "off", "tailgate": "off", "sunroof": "CLOSED", "sunroof_tilt": "OPEN",
+        "tire": 250, "tire_front_right": 250, "tire_rear_left": 250, "tire_rear_right": 250,
+        "tire_target_front_left": 230, "tire_target_front_right": 230,
+        "tire_target_rear_left": 250, "tire_target_rear_right": 250,
+        "climate": "INACTIVE", "climate_timer": "deactive",
     },
     "driving": {
-        "lock": "locked", "charging": "off", "soc": 65, "fuel": 38,
-        "electric_range": 39, "total_range": 510, "odometer": 22467, "motion": "driving",
-        "door": "off", "passenger_door": "off", "tailgate": "off",
-        "tire": 239, "tire_front_right": 238, "tire_rear_left": 235, "tire_rear_right": 236,
-        "service": "normal", "climate": "on",
+        "lock": "SECURED", "fuel": 84, "total_range": 710, "odometer": 18272, "motion": "on",
+        "door_front_driver": "off", "door_front_passenger": "off", "door_rear_driver": "off", "door_rear_passenger": "off",
+        "hood": "off", "tailgate": "off", "sunroof": "CLOSED", "sunroof_tilt": "CLOSED",
+        "tire": 250, "tire_front_right": 250, "tire_rear_left": 250, "tire_rear_right": 250,
+        "tire_target_front_left": 230, "tire_target_front_right": 230,
+        "tire_target_rear_left": 250, "tire_target_rear_right": 250,
+        "climate": "INACTIVE", "climate_timer": "deactive",
     },
     "attention": {
-        "lock": "unlocked", "charging": "off", "soc": 18, "fuel": 8,
-        "electric_range": 9, "total_range": 70, "odometer": 22468, "motion": "parked",
-        "door": "on", "passenger_door": "off", "tailgate": "on",
+        "lock": "UNSECURED", "fuel": 12, "total_range": 110, "odometer": 18273, "motion": "off",
+        "door_front_driver": "on", "door_front_passenger": "off", "door_rear_driver": "off", "door_rear_passenger": "off",
+        "hood": "off", "tailgate": "on", "sunroof": "OPEN", "sunroof_tilt": "OPEN",
         "tire": 190, "tire_front_right": 231, "tire_rear_left": 228, "tire_rear_right": 230,
-        "service": "service due", "climate": "off",
+        "tire_target_front_left": 230, "tire_target_front_right": 230,
+        "tire_target_rear_left": 250, "tire_target_rear_right": 250,
+        "climate": "ACTIVE", "climate_timer": "active",
     },
 }
 
@@ -99,6 +112,10 @@ class CarDataFixtureState:
 
 async def async_setup_entry(hass, entry, async_add_entities) -> None:
     """Create the fixture entities used by the BMW Status development flow."""
+    registry = dr.async_get(hass)
+    device = registry.async_get_device(identifiers={(DOMAIN, "BMW_STATUS_DEV_VEHICLE")})
+    if device:
+        registry.async_update_device(device.id, name_by_user="BMW 320d xDrive", model="320d xDrive")
     entities = {
         key: CarDataFixtureSensor(key, name, SCENARIOS["parked"][key], unit)
         for key, (name, unit) in SENSOR_DEFINITIONS.items()

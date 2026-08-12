@@ -5,7 +5,7 @@ services:
       dockerfile: .devcontainer/Dockerfile
     entrypoint: []
     command: >-
-      bash -lc "if [ -f /opt/bmw_status_devcontainer/zscaler-root-ca.crt ]; then install -D -m 0644 /opt/bmw_status_devcontainer/zscaler-root-ca.crt /usr/local/share/ca-certificates/zscaler-root-ca.crt && update-ca-certificates && export BMW_STATUS_ZSCALER_COMPAT=1; fi; exec python -m homeassistant --config /config"
+      bash -lc "if [ -f /opt/bmw_status_devcontainer/zscaler-root-ca.crt ]; then for certificate in /opt/bmw_status_devcontainer/*.crt; do install -D -m 0644 \"$$certificate\" \"/usr/local/share/ca-certificates/$$(basename \"$$certificate\")\"; done; update-ca-certificates && export BMW_STATUS_ZSCALER_COMPAT=1; fi; exec python -m homeassistant --config /config"
     ports:
       - "8123:8123"
     environment:
