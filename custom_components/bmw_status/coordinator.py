@@ -212,20 +212,19 @@ class BMWStatusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         query = urlencode({"key": config["api_key"]})
         session = aiohttp_client.async_get_clientsession(self.hass)
         ssl_context = ssl.create_default_context()
-        tile_image = Image.new("RGB", (768, 768))
-        for row, tile_y in enumerate(range(center_y - 1, center_y + 2)):
-            if tile_y < 0 or tile_y >= tile_count:
-                continue
-            for column, tile_x in enumerate(range(center_x - 1, center_x + 2)):
+        tile_image = Image.new("RGB", (1280, 1280))
+        for row, tile_y in enumerate(range(center_y - 2, center_y + 3)):
+            clamped_y = min(max(tile_y, 0), tile_count - 1)
+            for column, tile_x in enumerate(range(center_x - 2, center_x + 3)):
                 wrapped_x = tile_x % tile_count
-                url = f"https://api.maptiler.com/maps/{style}/{zoom}/{wrapped_x}/{tile_y}.png?{query}"
+                url = f"https://api.maptiler.com/maps/{style}/{zoom}/{wrapped_x}/{clamped_y}.png?{query}"
                 async with session.get(url, ssl=ssl_context) as response:
                     if response.status >= 400:
                         raise RuntimeError(f"MapTiler tile failed: {response.status}")
                     image = Image.open(BytesIO(await response.read())).convert("RGB")
                 tile_image.paste(image, (column * 256, row * 256))
-        pixel_x = (world_x - center_x + 1) * 256
-        pixel_y = (world_y - center_y + 1) * 256
+        pixel_x = (world_x - center_x + 2) * 256
+        pixel_y = (world_y - center_y + 2) * 256
         crop = tile_image.crop((round(pixel_x - 320), round(pixel_y - 140), round(pixel_x + 320), round(pixel_y + 140)))
         output = BytesIO()
         crop.save(output, format="PNG")

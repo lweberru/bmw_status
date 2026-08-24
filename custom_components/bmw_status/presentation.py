@@ -49,6 +49,12 @@ def build_presentation(
         ("sensor",),
         ("state of charge", "state_of_charge", "soc", "state of energy", "ladezustand"),
     )
+    mild_hybrid_battery_charge = _pick(
+        entities,
+        used,
+        ("sensor",),
+        ("trip battery charge level at end of trip", "trip battery", "battery management hv soc"),
+    )
     fuel = _pick(
         entities,
         used,
@@ -105,7 +111,7 @@ def build_presentation(
     )
     tracker = _pick(entities, used, ("device_tracker",), ())
 
-    electrification = _detect_electrification(battery_charge, charging, electric_range, fuel)
+    electrification = _detect_electrification(battery_charge, mild_hybrid_battery_charge, charging, electric_range, fuel)
     status = _vehicle_status(motion)
 
     return {
@@ -116,12 +122,14 @@ def build_presentation(
             "lock": _entity_data(lock),
             "charging": _entity_data(charging),
             "battery_charge": _entity_data(battery_charge),
+            "mild_hybrid_battery_charge": _entity_data(mild_hybrid_battery_charge),
             "fuel": _entity_data(fuel),
             "electric_range": _entity_data(electric_range),
             "total_range": _entity_data(total_range),
             "odometer": _entity_data(odometer),
             "motion": _entity_data(motion),
             "device_tracker": _entity_data(tracker),
+            "altitude": _tracker_altitude_data(tracker),
         },
         "groups": {
             "doors": [_group_entity_data(entity, "doors") for entity in doors],
@@ -196,6 +204,22 @@ def _entity_data(entity: EntitySnapshot | None) -> dict[str, Any] | None:
     return data
 
 
+def _tracker_altitude_data(tracker: EntitySnapshot | None) -> dict[str, Any] | None:
+    """Expose the CarData GPS altitude as a clickable tracker-backed value."""
+    if not tracker:
+        return None
+    attributes = tracker.attributes or {}
+    altitude = _number(str(attributes.get("gps_altitude") or ""))
+    if altitude is None:
+        return None
+    return {
+        "entity_id": tracker.entity_id,
+        "name": "GPS altitude",
+        "state": str(altitude),
+        "unit": str(attributes.get("gps_altitude_unit") or "m"),
+    }
+
+
 def _group_entity_data(entity: EntitySnapshot, group: str) -> dict[str, str]:
     """Add rendering metadata for a presentation group without exposing heuristics."""
     data = _entity_data(entity)
@@ -265,11 +289,14 @@ def _group_label(group: str, search_text: str, fallback: str) -> str:
 
 def _detect_electrification(
     battery_charge: EntitySnapshot | None,
+    mild_hybrid_battery_charge: EntitySnapshot | None,
     charging: EntitySnapshot | None,
     electric_range: EntitySnapshot | None,
     fuel: EntitySnapshot | None,
 ) -> str:
     """Classify the vehicle with the available CarData signals."""
+    if mild_hybrid_battery_charge and fuel and not battery_charge:
+        return "mhev"
     electric = any((battery_charge, charging, electric_range))
     if electric and fuel:
         return "phev"
@@ -301,11 +328,13 @@ def _build_badges(
     if fuel and _number(fuel.state) is not None:
         threshold = 15 if fuel.unit == "%" else 10
         if 0 < _number(fuel.state) <= threshold:
-            badges.append({"key": "low_fuel", "label": "Tank niedrig", "level": "warning"})
-    if status == "parked" and any(_is_open(entity.state) for entity in doors):
-        badges.append({"key": "openings", "label": "Öffnungen offen", "level": "warning"})
-    if any((_number(entity.state) or 0) < 200 for entity in tires):
-        badges.append({"key": "tire_pressure", "label": "Reifendruck niedrig", "level": "alert"})
+            badges.append({"key": "low_fuel", "label": "Tank niedrig", "level": "warning", "entity_id": fuel.entity_id})
+    open_entry = next((entity for entity in doors if _is_open(entity.state)), None)
+    if status == "parked" and open_entry:
+        badges.append({"key": "openings", "label": "Öffnungen offen", "level": "warning", "entity_id": open_entry.entity_id})
+    low_tire = next((entity for entity in tires if (_number(entity.state) or 0) < 200), None)
+    if low_tire:
+        badges.append({"key": "tire_pressure", "label": "Reifendruck niedrig", "level": "alert", "entity_id": low_tire.entity_id})
     return badges
 
 

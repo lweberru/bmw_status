@@ -18,6 +18,7 @@ class CarDataFixtureTracker(TrackerEntity):
     _attr_source_type = "gps"
     _attr_latitude = 48.9918286111
     _attr_longitude = 9.1283355556
+    _attr_extra_state_attributes = {"gps_altitude": 272.4, "gps_altitude_unit": "m"}
 
     async def async_update(self) -> None:
         """Keep a GPS state available after Home Assistant restarts."""

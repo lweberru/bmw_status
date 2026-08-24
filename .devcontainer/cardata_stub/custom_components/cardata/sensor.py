@@ -22,6 +22,7 @@ DEVICE_INFO = DeviceInfo(
 SENSOR_DEFINITIONS = {
     "lock": ("Doors overall state", None),
     "fuel": ("Range Tank level (%)", PERCENTAGE),
+    "trip_battery_charge_level_at_end_of_trip": ("Trip Battery charge level at end of trip", PERCENTAGE),
     "total_range": ("Range Total range (last sent)", "km"),
     "odometer": ("Vehicle mileage", "km"),
     "motion": ("Vehicle Motion state", None),
@@ -47,7 +48,7 @@ SENSOR_DEFINITIONS = {
 
 SCENARIOS: dict[str, dict[str, str | int]] = {
     "parked": {
-        "lock": "SECURED", "fuel": 88, "total_range": 744, "odometer": 18255, "motion": "off",
+        "lock": "SECURED", "fuel": 88, "trip_battery_charge_level_at_end_of_trip": 68, "total_range": 744, "odometer": 18255, "motion": "off",
         "door_front_driver": "off", "door_front_passenger": "off", "door_rear_driver": "off", "door_rear_passenger": "off",
         "hood": "off", "tailgate": "off", "sunroof": "CLOSED", "sunroof_tilt": "OPEN",
         "tire": 250, "tire_front_right": 250, "tire_rear_left": 250, "tire_rear_right": 250,
@@ -56,7 +57,7 @@ SCENARIOS: dict[str, dict[str, str | int]] = {
         "climate": "INACTIVE", "climate_timer": "deactive",
     },
     "driving": {
-        "lock": "SECURED", "fuel": 84, "total_range": 710, "odometer": 18272, "motion": "on",
+        "lock": "SECURED", "fuel": 84, "trip_battery_charge_level_at_end_of_trip": 66, "total_range": 710, "odometer": 18272, "motion": "on",
         "door_front_driver": "off", "door_front_passenger": "off", "door_rear_driver": "off", "door_rear_passenger": "off",
         "hood": "off", "tailgate": "off", "sunroof": "CLOSED", "sunroof_tilt": "CLOSED",
         "tire": 250, "tire_front_right": 250, "tire_rear_left": 250, "tire_rear_right": 250,
@@ -65,7 +66,7 @@ SCENARIOS: dict[str, dict[str, str | int]] = {
         "climate": "INACTIVE", "climate_timer": "deactive",
     },
     "attention": {
-        "lock": "UNSECURED", "fuel": 12, "total_range": 110, "odometer": 18273, "motion": "off",
+        "lock": "UNSECURED", "fuel": 12, "trip_battery_charge_level_at_end_of_trip": 42, "total_range": 110, "odometer": 18273, "motion": "off",
         "door_front_driver": "on", "door_front_passenger": "off", "door_rear_driver": "off", "door_rear_passenger": "off",
         "hood": "off", "tailgate": "on", "sunroof": "OPEN", "sunroof_tilt": "OPEN",
         "tire": 190, "tire_front_right": 231, "tire_rear_left": 228, "tire_rear_right": 230,

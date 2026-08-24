@@ -9,7 +9,7 @@ von `bmw-cardata-ha` gelieferten Entitaeten in einen versionierten
 Praesentationsvertrag; die Karte rendert diesen Vertrag, ohne im Browser auf
 Fahrzeug-Provider zuzugreifen.
 
-Version: 0.2.4
+Version: 0.2.5
 
 ## Funktionen
 

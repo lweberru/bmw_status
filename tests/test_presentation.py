@@ -48,6 +48,33 @@ def test_build_presentation_classifies_bev_and_ice():
     assert ice["electrification"] == "ice"
 
 
+def test_build_presentation_includes_mild_hybrid_trip_charge_and_tracker_altitude():
+    """Mildhybrid charge and current GPS altitude remain linked to their source entities."""
+    tracker = EntitySnapshot(
+        entity_id="device_tracker.bmw_320d_xdrive",
+        state="not_home",
+        name="BMW 320d xDrive",
+        attributes={"latitude": 48.1, "longitude": 11.5, "gps_altitude": 524.6, "gps_altitude_unit": "m"},
+    )
+    presentation = build_presentation(
+        VEHICLE,
+        [
+            snapshot("sensor.320d_xdrive_trip_battery_charge_level_at_end_of_trip", "68", "Trip Battery charge level at end of trip", "%"),
+            snapshot("sensor.320d_xdrive_remaining_fuel", "45", "Remaining Fuel", "%"),
+            tracker,
+        ],
+    )
+
+    assert presentation["electrification"] == "mhev"
+    assert presentation["entities"]["mild_hybrid_battery_charge"]["entity_id"] == "sensor.320d_xdrive_trip_battery_charge_level_at_end_of_trip"
+    assert presentation["entities"]["altitude"] == {
+        "entity_id": tracker.entity_id,
+        "name": "GPS altitude",
+        "state": "524.6",
+        "unit": "m",
+    }
+
+
 def test_build_presentation_adds_semantic_tire_metadata():
     """The frontend receives wheel position and actual-versus-target roles."""
     presentation = build_presentation(
