@@ -192,7 +192,7 @@ class BMWStatusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         longitude = tracker.get("longitude")
         if not config or not isinstance(latitude, (int, float)) or not isinstance(longitude, (int, float)):
             return None
-        return f"map-{presentation_key({'latitude': latitude, 'longitude': longitude, 'style': config['style'], 'zoom': config['zoom']})}"
+        return f"map-{presentation_key({'renderer_version': 2, 'latitude': latitude, 'longitude': longitude, 'style': config['style'], 'zoom': config['zoom']})}"
 
     async def _async_fetch_location_map(self, config: dict[str, Any], presentation: dict[str, Any]) -> bytes:
         """Build a static map from server-fetched tiles without exposing the API key."""
@@ -206,13 +206,14 @@ class BMWStatusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         world_x = (longitude + 180) / 360 * tile_count
         latitude_radians = math.radians(max(min(latitude, 85.05112878), -85.05112878))
         world_y = (1 - math.asinh(math.tan(latitude_radians)) / math.pi) / 2 * tile_count
-        center_x = int(world_x)
-        center_y = int(world_y)
+        center_x = math.floor(world_x)
+        center_y = math.floor(world_y)
         style = quote(str(config["style"]), safe="-")
         query = urlencode({"key": config["api_key"]})
         session = aiohttp_client.async_get_clientsession(self.hass)
         ssl_context = ssl.create_default_context()
-        tile_image = Image.new("RGB", (1280, 1280))
+        tile_image: Image.Image | None = None
+        tile_size: int | None = None
         for row, tile_y in enumerate(range(center_y - 2, center_y + 3)):
             clamped_y = min(max(tile_y, 0), tile_count - 1)
             for column, tile_x in enumerate(range(center_x - 2, center_x + 3)):
@@ -222,9 +223,19 @@ class BMWStatusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     if response.status >= 400:
                         raise RuntimeError(f"MapTiler tile failed: {response.status}")
                     image = Image.open(BytesIO(await response.read())).convert("RGB")
-                tile_image.paste(image, (column * 256, row * 256))
-        pixel_x = (world_x - center_x + 2) * 256
-        pixel_y = (world_y - center_y + 2) * 256
+                if image.width != image.height:
+                    raise RuntimeError(f"MapTiler returned a non-square tile: {image.size}")
+                if tile_size is None:
+                    tile_size = image.width
+                    tile_image = Image.new("RGB", (tile_size * 5, tile_size * 5))
+                elif image.size != (tile_size, tile_size):
+                    raise RuntimeError(f"MapTiler returned inconsistent tile sizes: {image.size}")
+                assert tile_image is not None
+                tile_image.paste(image, (column * tile_size, row * tile_size))
+        if tile_image is None or tile_size is None:
+            raise RuntimeError("MapTiler returned no tiles")
+        pixel_x = (world_x - center_x + 2) * tile_size
+        pixel_y = (world_y - center_y + 2) * tile_size
         crop = tile_image.crop((round(pixel_x - 320), round(pixel_y - 140), round(pixel_x + 320), round(pixel_y + 140)))
         output = BytesIO()
         crop.save(output, format="PNG")
