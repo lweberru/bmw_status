@@ -55,6 +55,7 @@ async def test_options_flow_keeps_existing_image_key_when_blank():
     flow._options = dict(entry.options)
 
     result = await flow.async_step_image_credentials({CONF_IMAGE_API_KEY: "", CONF_IMAGE_MODEL: "new-model"})
+    result = await flow.async_step_map_provider({CONF_MAP_ENABLED: False})
 
     assert result["data"][CONF_IMAGE][CONF_IMAGE_API_KEY] == "existing-key"
     assert result["data"][CONF_IMAGE][CONF_IMAGE_MODEL] == "new-model"

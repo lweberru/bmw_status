@@ -16,6 +16,7 @@ async def test_entry_setup_and_unload_manage_coordinator_lifecycle(hass):
         data={CONF_CARDATA_DEVICE_ID: "vehicle-device"},
         options={},
     )
+    entry.add_to_hass(hass)
     coordinator = AsyncMock()
     hass.config_entries.async_forward_entry_setups = AsyncMock()
     hass.config_entries.async_unload_platforms = AsyncMock(return_value=True)

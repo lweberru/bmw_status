@@ -97,3 +97,33 @@ async def test_image_prompt_uses_cardata_vehicle_identity_and_configured_plate(h
 
     assert "2024 Tanzanite Blue BMW X5 G05 SAV" in prompt
     assert "License plate text must remain exactly: M-AB 1234." in prompt
+
+
+async def test_image_prompt_keeps_open_driver_door_attached(hass):
+    """The image prompt must distinguish the driver's door from the passenger door."""
+    status_entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={CONF_CARDATA_DEVICE_ID: "device-id"},
+        options={},
+    )
+    status_entry.add_to_hass(hass)
+    coordinator = BMWStatusCoordinator(hass, status_entry)
+
+    prompt = coordinator._build_state_render_prompt(
+        {
+            "vehicle": {"name": "BMW"},
+            "status": {"key": "parked"},
+            "groups": {
+                "doors": [{
+                    "name": "Door state (front driver)",
+                    "entity_id": "binary_sensor.front_driver_door",
+                    "state": "on",
+                }],
+            },
+        }
+    )
+
+    assert "front driver's door on the visible side" in prompt
+    assert "still attached to its hinges" in prompt
+    assert "do not remove it" in prompt
+    assert "front passenger door closed" in prompt

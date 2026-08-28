@@ -131,7 +131,7 @@ class BMWStatusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         if not self.data:
             return
         presentation = self.data.get("presentation") or {}
-        state_key = f"state-{presentation_key(presentation)}"
+        state_key = f"state-{presentation_key({'renderer_version': 2, **presentation})}"
         tire_key = f"tire-{presentation_key({'vehicle': presentation.get('vehicle') or {}, 'asset': 'tire_top_down'})}"
         map_key = self._location_map_key(presentation)
         if self._image_config():
@@ -258,11 +258,15 @@ class BMWStatusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         configured_view = image_options.get("view_mode", "auto")
         view = "rear three-quarter view" if configured_view == "rear_right" else "front three-quarter view"
         open_names = [
-            str(item.get("name") or item.get("entity_id"))
+            self._image_opening_description(item)
             for item in ((presentation.get("groups") or {}).get("doors") or [])
             if str(item.get("state") or "").lower() in {"on", "true", "open", "opened"}
         ]
-        openings = f"Open only: {', '.join(open_names)}." if open_names else "Keep all doors, windows, hood, trunk and sunroof closed."
+        openings = (
+            f"Open only: {', '.join(open_names)}."
+            if open_names
+            else "Keep all doors, windows, hood, trunk and sunroof closed."
+        )
         identity_lock = (
             f"This must be exactly this vehicle identity: {identity}. "
             "Do not change its manufacturer, model family, body shape, paint color, trim, badges or wheel design."
@@ -273,6 +277,22 @@ class BMWStatusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             f"{identity_lock} {plate_instruction} Keep the same camera framing and background. {openings} "
             "Use vehicle-relative left and right; do not mirror the vehicle."
         ).replace("  ", " ").strip()
+
+    @staticmethod
+    def _image_opening_description(item: dict[str, Any]) -> str:
+        """Turn door entity labels into unambiguous image instructions."""
+        text = " ".join(str(item.get(key) or "") for key in ("name", "entity_id")).lower()
+        is_rear = "rear" in text or "hinten" in text
+        if ("front driver" in text or "front left" in text or "fahrer" in text) and not is_rear:
+            return (
+                "the front driver's door on the visible side of the vehicle, fully open and still attached "
+                "to its hinges; do not remove it and keep the front passenger door closed"
+            )
+        if "front passenger" in text or "front right" in text or "beifahrer" in text:
+            return (
+                "the front passenger door, fully open and still attached to its hinges; keep the driver's door closed"
+            )
+        return str(item.get("name") or item.get("entity_id"))
 
     def _build_tire_render_prompt(self, presentation: dict[str, Any]) -> str:
         """Build a stable, top-down vehicle reference image for tire placement."""
@@ -295,7 +315,7 @@ class BMWStatusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         vehicle = self._vehicle_metadata(device_id)
         entities = self._entity_snapshots(device_id)
         presentation = build_presentation(vehicle, entities)
-        state_key = f"state-{presentation_key(presentation)}"
+        state_key = f"state-{presentation_key({'renderer_version': 2, **presentation})}"
         tire_key = f"tire-{presentation_key({'vehicle': presentation.get('vehicle') or {}, 'asset': 'tire_top_down'})}"
         cached_image = self._image_index.get("images", {}).get(state_key)
         cached_tire_image = self._image_index.get("images", {}).get(tire_key)
