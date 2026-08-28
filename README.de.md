@@ -9,7 +9,7 @@ von `bmw-cardata-ha` gelieferten Entitaeten in einen versionierten
 Praesentationsvertrag; die Karte rendert diesen Vertrag, ohne im Browser auf
 Fahrzeug-Provider zuzugreifen.
 
-Version: 0.2.5
+Version: 0.3.0
 
 ## Funktionen
 
@@ -17,6 +17,9 @@ Version: 0.2.5
 - Ein versioniertes `presentation`-Attribut mit Fahrzeug-, Energie-, Reichweiten-,
   Oeffnungs-, Reifendruck-, Service- und Klimadaten.
 - Serverseitig erzeugte und gecachte Fahrzeugbilder sowie MapTiler-Positionskarten.
+- Fahrzeugbilder koennen optional den aktuellen Fahrzeugstandort, die Jahreszeit
+  und das Wetter von Open-Meteo verwenden. Eine Google-Geocode-Entity kann einen
+  lesbaren Ortsnamen beisteuern.
 - MapTiler- und Bildprovider-Schluessel verbleiben in der Backend-Konfiguration;
   sie werden weder an den Browser noch ueber den Sensor veroeffentlicht.
 - Aktionen zum Aktualisieren von Daten und Verwalten gecachter Bild-Assets.

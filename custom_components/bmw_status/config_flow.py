@@ -18,6 +18,7 @@ from .const import (
     CONF_IMAGE,
     CONF_IMAGE_API_KEY,
     CONF_IMAGE_ENABLED,
+    CONF_IMAGE_GEOCODE_ENTITY,
     CONF_IMAGE_MODEL,
     CONF_IMAGE_PROVIDER,
     CONF_IMAGE_SCENE_MODE,
@@ -117,6 +118,7 @@ class BMWStatusConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     vol.Required(CONF_IMAGE_PROVIDER, default="gemini"): vol.In(IMAGE_PROVIDERS),
                     vol.Required(CONF_IMAGE_VIEW_MODE, default="auto"): vol.In(("auto", "front_left", "rear_right")),
                     vol.Required(CONF_IMAGE_SCENE_MODE, default="auto"): vol.In(("auto", "parked", "driving")),
+                    vol.Optional(CONF_IMAGE_GEOCODE_ENTITY, default=""): str,
                 }
             ),
         )
@@ -222,6 +224,7 @@ class BMWStatusOptionsFlow(OptionsFlow):
                     vol.Required(CONF_IMAGE_PROVIDER, default=current.get(CONF_IMAGE_PROVIDER, "gemini")): vol.In(IMAGE_PROVIDERS),
                     vol.Required(CONF_IMAGE_VIEW_MODE, default=current.get(CONF_IMAGE_VIEW_MODE, "auto")): vol.In(("auto", "front_left", "rear_right")),
                     vol.Required(CONF_IMAGE_SCENE_MODE, default=current.get(CONF_IMAGE_SCENE_MODE, "auto")): vol.In(("auto", "parked", "driving")),
+                    vol.Optional(CONF_IMAGE_GEOCODE_ENTITY, default=current.get(CONF_IMAGE_GEOCODE_ENTITY, "")): str,
                     vol.Optional("replace_api_key", default=False): bool,
                 }
             ),

@@ -127,3 +127,33 @@ async def test_image_prompt_keeps_open_driver_door_attached(hass):
     assert "still attached to its hinges" in prompt
     assert "do not remove it" in prompt
     assert "front passenger door closed" in prompt
+
+
+async def test_image_prompt_includes_location_weather_and_season(hass):
+    """The image prompt carries the current vehicle environment context."""
+    status_entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={CONF_CARDATA_DEVICE_ID: "device-id"},
+        options={},
+    )
+    status_entry.add_to_hass(hass)
+    coordinator = BMWStatusCoordinator(hass, status_entry)
+
+    prompt = coordinator._build_state_render_prompt(
+        {
+            "vehicle": {"name": "BMW"},
+            "status": {"key": "parked"},
+            "image_context": {
+                "location": "Heilbronn, Germany",
+                "season": "summer",
+                "time_of_day": "afternoon",
+                "weather": "clear sky",
+                "temperature": 24,
+            },
+        }
+    )
+
+    assert "Heilbronn, Germany" in prompt
+    assert "summer" in prompt
+    assert "clear sky" in prompt
+    assert "24" in prompt

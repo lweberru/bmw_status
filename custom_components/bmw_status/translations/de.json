@@ -28,6 +28,7 @@
           "provider": "Bildprovider",
           "view_mode": "Ansicht",
           "scene_mode": "Szene",
+          "geocode_entity": "Google-Geocode-Entity (optional)",
           "replace_api_key": "Provider-Schlüssel ändern"
         }
       },
@@ -74,6 +75,7 @@
           "provider": "Bildprovider",
           "view_mode": "Ansicht",
           "scene_mode": "Szene",
+          "geocode_entity": "Google-Geocode-Entity (optional)",
           "replace_api_key": "Provider-Schlüssel ändern"
         }
       },

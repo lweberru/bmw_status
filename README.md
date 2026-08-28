@@ -8,7 +8,7 @@ to be used together: this integration turns the entities supplied by
 `bmw-cardata-ha` into a versioned presentation contract, while the card renders
 that contract without querying vehicle providers in the browser.
 
-Version: 0.2.7
+Version: 0.3.0
 
 ## Features
 
@@ -16,6 +16,9 @@ Version: 0.2.7
 - A versioned `presentation` attribute with vehicle, energy, range, opening,
 	tire-pressure, service and climate data.
 - Server-side generated and cached vehicle images and MapTiler location maps.
+- Generated vehicle images can use the vehicle's current location, season and
+	coordinate-based Open-Meteo weather. A Google Geocode entity can optionally
+	provide a readable place name.
 - MapTiler and image-provider credentials remain in the backend configuration;
 	they are never exposed to the browser or published through the sensor.
 - Services to refresh data and manage cached image assets.
@@ -44,6 +47,12 @@ backend and frontend.
 - `bmw_status.refresh`: Refreshes the presentation from the current CarData states.
 - `bmw_status.regenerate_images`: Regenerates cached visual assets for an entry.
 - `bmw_status.clear_image_cache`: Clears only the local asset cache for an entry.
+
+When image generation is enabled, Open-Meteo is queried with the current BMW
+tracker coordinates and cached for 15 minutes. Configure the optional Google
+Geocode entity in the image-generation settings to add a readable location to
+the prompt. If the geocode entity or weather service is unavailable, image
+generation continues with the remaining context.
 
 All services accept an optional `entry_id`, which is useful with multiple vehicles.
 

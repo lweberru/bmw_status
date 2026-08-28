@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+import asyncio
+from datetime import datetime, timedelta
 from io import BytesIO
 import logging
 import math
@@ -10,12 +11,13 @@ import ssl
 from typing import Any, Callable
 from urllib.parse import quote, urlencode
 
+import aiohttp
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import Event, HomeAssistant, callback
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers import aiohttp_client
-from homeassistant.helpers.event import async_track_state_change_event
+from homeassistant.helpers.event import async_track_state_change_event, async_track_time_interval
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from homeassistant.util import dt as dt_util
 from PIL import Image
@@ -25,6 +27,7 @@ from .const import (
     CONF_CARDATA_DEVICE_ID,
     CONF_IMAGE,
     CONF_IMAGE_ENABLED,
+    CONF_IMAGE_GEOCODE_ENTITY,
     CONF_LICENSE_PLATE,
     CONF_MAP,
     CONF_MAP_API_KEY,
@@ -54,9 +57,13 @@ class BMWStatusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         )
         self.entry = entry
         self._unsub_state_changes: Callable[[], None] | None = None
+        self._unsub_context_refresh: Callable[[], None] | None = None
         self._image_state = ImageJobState("disabled")
         self._image_store = ImageStore(hass, entry.entry_id)
         self._image_index: dict[str, Any] = {"version": 1, "images": {}}
+        self._weather_cache: dict[str, Any] | None = None
+        self._weather_cache_coordinates: tuple[float, float] | None = None
+        self._weather_cache_updated_at: datetime | None = None
         self._image_jobs = ImageJobManager(hass, self._async_render_image, self._publish_image_state)
         self._map_jobs = ImageJobManager(hass, self._async_render_image, self._publish_image_state)
 
@@ -64,7 +71,13 @@ class BMWStatusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         """Subscribe to the current CarData entities for this vehicle."""
         self._image_index = await self._image_store.async_load(self.hass)
         entity_ids = [snapshot.entity_id for snapshot in self._entity_snapshots(self.entry.data[CONF_CARDATA_DEVICE_ID])]
+        geocode_entity = str((self.entry.options.get(CONF_IMAGE) or {}).get(CONF_IMAGE_GEOCODE_ENTITY) or "").strip()
+        if geocode_entity:
+            entity_ids.append(geocode_entity)
         self._unsub_state_changes = async_track_state_change_event(self.hass, entity_ids, self._async_handle_state_change)
+        self._unsub_context_refresh = async_track_time_interval(
+            self.hass, self._async_handle_context_refresh, timedelta(minutes=15)
+        )
         await self.async_request_refresh()
 
     async def async_stop(self) -> None:
@@ -72,12 +85,20 @@ class BMWStatusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         if self._unsub_state_changes:
             self._unsub_state_changes()
             self._unsub_state_changes = None
+        if self._unsub_context_refresh:
+            self._unsub_context_refresh()
+            self._unsub_context_refresh = None
         self._image_jobs.async_shutdown()
         self._map_jobs.async_shutdown()
 
     @callback
     def _async_handle_state_change(self, _event: Event) -> None:
         """Refresh immediately, then request a debounced image for the new state."""
+        self.hass.async_create_task(self.async_request_refresh())
+
+    @callback
+    def _async_handle_context_refresh(self, _now: datetime) -> None:
+        """Refresh weather and seasonal context while the vehicle is stationary."""
         self.hass.async_create_task(self.async_request_refresh())
 
     def _publish_image_state(self, state: ImageJobState) -> None:
@@ -131,7 +152,7 @@ class BMWStatusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         if not self.data:
             return
         presentation = self.data.get("presentation") or {}
-        state_key = f"state-{presentation_key({'renderer_version': 2, **presentation})}"
+        state_key = f"state-{presentation_key({'renderer_version': 3, **presentation})}"
         tire_key = f"tire-{presentation_key({'vehicle': presentation.get('vehicle') or {}, 'asset': 'tire_top_down'})}"
         map_key = self._location_map_key(presentation)
         if self._image_config():
@@ -169,6 +190,71 @@ class BMWStatusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             model=str(options.get("model") or default_model),
             size=str(options.get("size") or "1024x1024"),
         )
+
+    async def _async_build_image_context(self, presentation: dict[str, Any]) -> dict[str, str | float]:
+        """Build cached location, weather and seasonal context for image prompts."""
+        context: dict[str, str | float] = {
+            "season": _season_for_location(None),
+            "time_of_day": _time_of_day(),
+        }
+        image_options = self.entry.options.get(CONF_IMAGE) or {}
+        geocode_entity = str(image_options.get(CONF_IMAGE_GEOCODE_ENTITY) or "").strip()
+        if geocode_entity:
+            geocode_state = self.hass.states.get(geocode_entity)
+            if geocode_state:
+                location = _geocode_location(geocode_state)
+                if location:
+                    context["location"] = location
+
+        tracker = (presentation.get("entities") or {}).get("device_tracker") or {}
+        latitude = tracker.get("latitude")
+        longitude = tracker.get("longitude")
+        if isinstance(latitude, (int, float)) and isinstance(longitude, (int, float)):
+            context["season"] = _season_for_location(float(latitude))
+            weather = await self._async_fetch_vehicle_weather(float(latitude), float(longitude))
+            if weather:
+                context.update(weather)
+        return context
+
+    async def _async_fetch_vehicle_weather(self, latitude: float, longitude: float) -> dict[str, str | float] | None:
+        """Fetch current Open-Meteo conditions near the vehicle with a short cache."""
+        coordinates = (round(latitude, 2), round(longitude, 2))
+        now = dt_util.utcnow()
+        if (
+            self._weather_cache
+            and self._weather_cache_coordinates == coordinates
+            and self._weather_cache_updated_at
+            and now - self._weather_cache_updated_at < timedelta(minutes=15)
+        ):
+            return dict(self._weather_cache)
+        query = urlencode(
+            {
+                "latitude": latitude,
+                "longitude": longitude,
+                "current": "temperature_2m,weather_code,precipitation,wind_speed_10m",
+                "timezone": "auto",
+            }
+        )
+        try:
+            session = aiohttp_client.async_get_clientsession(self.hass)
+            async with session.get(f"https://api.open-meteo.com/v1/forecast?{query}", timeout=10) as response:
+                if response.status >= 400:
+                    raise RuntimeError(f"Open-Meteo request failed: {response.status}")
+                payload = await response.json()
+            current = payload.get("current") or {}
+            weather = {
+                "weather": _weather_description(current.get("weather_code")),
+                "temperature": float(current["temperature_2m"]),
+                "precipitation": float(current.get("precipitation", 0)),
+                "wind": float(current.get("wind_speed_10m", 0)),
+            }
+        except (aiohttp.ClientError, asyncio.TimeoutError, KeyError, TypeError, ValueError, RuntimeError) as err:
+            _LOGGER.warning("Unable to fetch Open-Meteo weather for vehicle: %s", err)
+            return dict(self._weather_cache) if self._weather_cache else None
+        self._weather_cache = weather
+        self._weather_cache_coordinates = coordinates
+        self._weather_cache_updated_at = now
+        return dict(weather)
 
     def _map_config(self) -> dict[str, Any] | None:
         """Read MapTiler credentials kept only in config-entry options."""
@@ -272,9 +358,25 @@ class BMWStatusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "Do not change its manufacturer, model family, body shape, paint color, trim, badges or wheel design."
         )
         plate_instruction = f"License plate text must remain exactly: {license_plate}." if license_plate else ""
+        image_context = presentation.get("image_context") or {}
+        context_parts = []
+        if image_context.get("location"):
+            context_parts.append(f"location: {image_context['location']}")
+        if image_context.get("season") or image_context.get("time_of_day"):
+            context_parts.append(
+                f"season and time: {image_context.get('season', 'unknown')} {image_context.get('time_of_day', '')}".strip()
+            )
+        if image_context.get("weather"):
+            weather = f"weather: {image_context['weather']}"
+            if image_context.get("temperature") is not None:
+                weather += f", {image_context['temperature']} degrees C"
+            if image_context.get("precipitation") is not None:
+                weather += f", precipitation {image_context['precipitation']} mm"
+            context_parts.append(weather)
+        context_instruction = f"Current scene context: {'; '.join(context_parts)}." if context_parts else ""
         return (
             f"Full-frame photorealistic {view} image of {identity}, {scene}. "
-            f"{identity_lock} {plate_instruction} Keep the same camera framing and background. {openings} "
+            f"{identity_lock} {plate_instruction} {context_instruction} Keep the same camera framing and background. {openings} "
             "Use vehicle-relative left and right; do not mirror the vehicle."
         ).replace("  ", " ").strip()
 
@@ -315,7 +417,9 @@ class BMWStatusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         vehicle = self._vehicle_metadata(device_id)
         entities = self._entity_snapshots(device_id)
         presentation = build_presentation(vehicle, entities)
-        state_key = f"state-{presentation_key({'renderer_version': 2, **presentation})}"
+        if self._image_config():
+            presentation["image_context"] = await self._async_build_image_context(presentation)
+        state_key = f"state-{presentation_key({'renderer_version': 3, **presentation})}"
         tire_key = f"tire-{presentation_key({'vehicle': presentation.get('vehicle') or {}, 'asset': 'tire_top_down'})}"
         cached_image = self._image_index.get("images", {}).get(state_key)
         cached_tire_image = self._image_index.get("images", {}).get(tire_key)
@@ -437,3 +541,57 @@ def _utc_timestamp() -> str:
     """Return an ISO timestamp suitable for an entity attribute."""
     now: datetime = dt_util.utcnow()
     return now.isoformat()
+
+
+def _geocode_location(state: Any) -> str | None:
+    """Extract a compact human-readable location from a geocode entity."""
+    attributes = state.attributes or {}
+    for key in ("formatted_address", "address", "location", "city", "locality"):
+        value = str(attributes.get(key) or "").strip()
+        if value:
+            return value
+    value = str(state.state or "").strip()
+    return value if value and value.lower() not in {"unknown", "unavailable"} else None
+
+
+def _season_for_location(latitude: float | None) -> str:
+    """Return the meteorological season, accounting for the hemisphere."""
+    month = dt_util.now().month
+    northern = latitude is None or latitude >= 0
+    seasons = ("winter", "spring", "summer", "autumn") if northern else ("summer", "autumn", "winter", "spring")
+    return seasons[(month % 12) // 3]
+
+
+def _time_of_day() -> str:
+    """Return a prompt-friendly local time-of-day label."""
+    hour = dt_util.now().hour
+    if hour < 6:
+        return "night"
+    if hour < 12:
+        return "morning"
+    if hour < 18:
+        return "afternoon"
+    if hour < 22:
+        return "evening"
+    return "night"
+
+
+def _weather_description(code: Any) -> str:
+    """Map Open-Meteo WMO codes to concise prompt text."""
+    try:
+        weather_code = int(code)
+    except (TypeError, ValueError):
+        return "unknown weather"
+    if weather_code == 0:
+        return "clear sky"
+    if weather_code in {1, 2, 3}:
+        return "partly cloudy" if weather_code < 3 else "overcast"
+    if weather_code in {45, 48}:
+        return "foggy"
+    if weather_code in {51, 53, 55, 56, 57, 61, 63, 65, 66, 67, 80, 81, 82}:
+        return "rainy"
+    if weather_code in {71, 73, 75, 77, 85, 86}:
+        return "snowy"
+    if weather_code in {95, 96, 99}:
+        return "thunderstorm"
+    return "variable weather"
