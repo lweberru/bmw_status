@@ -8,7 +8,7 @@ to be used together: this integration turns the entities supplied by
 `bmw-cardata-ha` into a versioned presentation contract, while the card renders
 that contract without querying vehicle providers in the browser.
 
-Version: 0.3.0
+Version: 0.3.1
 
 ## Features
 

@@ -154,15 +154,11 @@ class BMWStatusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         presentation = self.data.get("presentation") or {}
         state_key = f"state-{presentation_key({'renderer_version': 3, **presentation})}"
         tire_key = f"tire-{presentation_key({'vehicle': presentation.get('vehicle') or {}, 'asset': 'tire_top_down'})}"
-        map_key = self._location_map_key(presentation)
         if self._image_config():
             self._image_index.get("images", {}).pop(state_key, None)
             self._image_index.get("images", {}).pop(tire_key, None)
             self._image_jobs.async_request(state_key, force=True)
             self._image_jobs.async_request(tire_key, force=True)
-        if self._map_config() and map_key:
-            self._image_index.get("images", {}).pop(map_key, None)
-            self._map_jobs.async_request(map_key, force=True)
         await self._image_store.async_save(self.hass, self._image_index)
 
     async def async_clear_image_cache(self) -> None:
@@ -423,8 +419,6 @@ class BMWStatusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         tire_key = f"tire-{presentation_key({'vehicle': presentation.get('vehicle') or {}, 'asset': 'tire_top_down'})}"
         cached_image = self._image_index.get("images", {}).get(state_key)
         cached_tire_image = self._image_index.get("images", {}).get(tire_key)
-        map_key = self._location_map_key(presentation)
-        cached_map_image = self._image_index.get("images", {}).get(map_key) if map_key else None
         image_configured = self._image_config() is not None
         if image_configured and cached_image and await self._image_store.async_exists(self.hass, str(cached_image.get("filename") or "")):
             presentation["images"] = [str(cached_image["local_url"])]
@@ -437,11 +431,7 @@ class BMWStatusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             presentation["tire_image"] = str(cached_tire_image["local_url"])
         elif image_configured:
             self._image_jobs.async_request(tire_key)
-        if map_key and cached_map_image and await self._image_store.async_exists(self.hass, str(cached_map_image.get("filename") or "")):
-            presentation["location_image"] = str(cached_map_image["local_url"])
-        elif map_key:
-            self._map_jobs.async_request(map_key)
-        elif not image_configured:
+        if not image_configured:
             self._image_state = ImageJobState("disabled")
         return {
             "schema_version": PRESENTATION_SCHEMA_VERSION,

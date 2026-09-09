@@ -1,7 +1,7 @@
 {
   "domain": "bmw_status",
   "name": "BMW Status",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "codeowners": [],
   "config_flow": true,
   "after_dependencies": ["cardata"],
