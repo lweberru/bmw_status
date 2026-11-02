@@ -8,7 +8,7 @@ to be used together: this integration turns the entities supplied by
 `bmw-cardata-ha` into a versioned presentation contract, while the card renders
 that contract without querying vehicle providers in the browser.
 
-Version: 0.3.1
+Version: 0.3.2
 
 ## Features
 
@@ -37,6 +37,13 @@ Version: 0.3.1
 3. Select the CarData vehicle and configure the optional vehicle details.
 4. Configure server-side map and image providers when required.
 5. Add a BMW Status Card for the generated sensor, for example `sensor.status`.
+
+OpenAI image generation can be selected in the integration options using an
+OpenAI project API key. Switching providers resets the previous key, model, and
+size. The default is `gpt-image-2.5-flare` at `1024x1024`, requested as PNG with
+`low` quality to keep costs down. The model remains configurable. Existing model
+settings are preserved; replace `gpt-image-1` in the options if previously saved.
+API credit is required; a ChatGPT login alone does not authorize these requests.
 
 The status sensor publishes `attributes.presentation`. Use that attribute only
 through the companion card; it is the stable display contract between the

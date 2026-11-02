@@ -30,11 +30,12 @@ from .const import (
     CONF_MAP_ENABLED,
     CONF_MAP_STYLE,
     CONF_MAP_ZOOM,
+    DEFAULT_IMAGE_MODELS,
     DOMAIN,
 )
 
 IMAGE_PROVIDERS = ("gemini", "openai")
-OPENAI_SIZES = ("1024x1024", "1792x1024", "1024x1792")
+OPENAI_SIZES = ("1024x1024", "1536x1024", "1024x1536")
 
 
 def _cardata_vehicle_options(hass: HomeAssistant) -> dict[str, str]:
@@ -130,7 +131,7 @@ class BMWStatusConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         if user_input is not None:
             image_options.update(user_input)
             return await self.async_step_map_provider()
-        default_model = "gemini-2.5-flash-image" if provider == "gemini" else "gpt-image-1"
+        default_model = DEFAULT_IMAGE_MODELS[provider]
         schema: dict[Any, Any] = {
             vol.Required(CONF_IMAGE_API_KEY): str,
             vol.Optional(CONF_IMAGE_MODEL, default=default_model): str,
@@ -212,6 +213,10 @@ class BMWStatusOptionsFlow(OptionsFlow):
             replace_key = bool(image.pop("replace_api_key", False))
             self._options[CONF_IMAGE] = image
             provider_changed = image[CONF_IMAGE_PROVIDER] != current.get(CONF_IMAGE_PROVIDER)
+            if provider_changed:
+                image.pop(CONF_IMAGE_API_KEY, None)
+                image.pop(CONF_IMAGE_MODEL, None)
+                image.pop(CONF_IMAGE_SIZE, None)
             has_key = bool(str(image.get(CONF_IMAGE_API_KEY) or "").strip())
             if image[CONF_IMAGE_ENABLED] and (replace_key or provider_changed or not has_key):
                 return await self.async_step_image_credentials()
@@ -240,9 +245,7 @@ class BMWStatusOptionsFlow(OptionsFlow):
                 image[CONF_IMAGE_API_KEY] = key
             image.update(user_input)
             return await self.async_step_map_provider()
-        default_model = image.get(CONF_IMAGE_MODEL) or (
-            "gemini-2.5-flash-image" if provider == "gemini" else "gpt-image-1"
-        )
+        default_model = image.get(CONF_IMAGE_MODEL) or DEFAULT_IMAGE_MODELS[provider]
         schema: dict[Any, Any] = {
             vol.Optional(CONF_IMAGE_API_KEY, default=""): str,
             vol.Optional(CONF_IMAGE_MODEL, default=default_model): str,

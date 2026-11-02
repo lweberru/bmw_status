@@ -9,6 +9,8 @@ from typing import Any
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import aiohttp_client
 
+from .const import DEFAULT_IMAGE_MODELS
+
 
 @dataclass(frozen=True, slots=True)
 class ImageProviderConfig:
@@ -40,10 +42,12 @@ async def _async_generate_openai(
 ) -> bytes:
     session = aiohttp_client.async_get_clientsession(hass)
     payload = {
-        "model": config.model or "gpt-image-1",
+        "model": config.model or DEFAULT_IMAGE_MODELS["openai"],
         "prompt": prompt,
         "size": config.size,
-        "response_format": "b64_json",
+        "output_format": "png",
+        "quality": "low",
+        "n": 1,
     }
     async with session.post(
         "https://api.openai.com/v1/images/generations",
@@ -65,7 +69,7 @@ async def _async_generate_gemini(
     prompt: str,
 ) -> bytes:
     session = aiohttp_client.async_get_clientsession(hass)
-    model = config.model or "gemini-2.5-flash-image"
+    model = config.model or DEFAULT_IMAGE_MODELS["gemini"]
     url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={config.api_key}"
     payload: dict[str, Any] = {
         "contents": [{"role": "user", "parts": [{"text": prompt}]}],

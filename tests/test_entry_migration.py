@@ -10,12 +10,47 @@ from custom_components.bmw_status.const import (
     CONF_IMAGE_ENABLED,
     CONF_IMAGE_MODEL,
     CONF_IMAGE_PROVIDER,
+    CONF_IMAGE_SIZE,
     CONF_MAP,
     CONF_MAP_API_KEY,
     CONF_MAP_ENABLED,
     CONF_MAP_STYLE,
     DOMAIN,
 )
+
+
+async def test_switch_to_openai_resets_provider_credentials_and_model():
+    """Switching providers must not retain the Gemini key or model."""
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        options={CONF_IMAGE: {
+            CONF_IMAGE_ENABLED: True,
+            CONF_IMAGE_PROVIDER: "gemini",
+            CONF_IMAGE_API_KEY: "gemini-key",
+            CONF_IMAGE_MODEL: "gemini-2.5-flash-image",
+            CONF_IMAGE_SIZE: "1792x1024",
+        }},
+    )
+    flow = BMWStatusOptionsFlow(entry)
+    flow._options = dict(entry.options)
+
+    result = await flow.async_step_image_provider({
+        CONF_IMAGE_ENABLED: True,
+        CONF_IMAGE_PROVIDER: "openai",
+    })
+
+    assert result["step_id"] == "image_credentials"
+    defaults = result["data_schema"]({})
+    assert defaults[CONF_IMAGE_MODEL] == "gpt-image-2.5-flare"
+    assert defaults[CONF_IMAGE_SIZE] == "1024x1024"
+    assert CONF_IMAGE_API_KEY not in flow._options[CONF_IMAGE]
+
+    await flow.async_step_image_credentials({
+        CONF_IMAGE_API_KEY: "openai-key",
+        CONF_IMAGE_MODEL: defaults[CONF_IMAGE_MODEL],
+        CONF_IMAGE_SIZE: defaults[CONF_IMAGE_SIZE],
+    })
+    assert flow._options[CONF_IMAGE][CONF_IMAGE_API_KEY] == "openai-key"
 
 
 async def test_entry_migration_preserves_backend_maptiler_options(hass):

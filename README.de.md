@@ -9,7 +9,7 @@ von `bmw-cardata-ha` gelieferten Entitaeten in einen versionierten
 Praesentationsvertrag; die Karte rendert diesen Vertrag, ohne im Browser auf
 Fahrzeug-Provider zuzugreifen.
 
-Version: 0.3.1
+Version: 0.3.2
 
 ## Funktionen
 
@@ -38,6 +38,15 @@ Version: 0.3.1
 3. Waehle das CarData-Fahrzeug und konfiguriere die optionalen Fahrzeugdetails.
 4. Konfiguriere bei Bedarf serverseitige Karten- und Bildprovider.
 5. Fuege eine BMW Status Card fuer den erzeugten Sensor hinzu, zum Beispiel `sensor.status`.
+
+Fuer OpenAI in den Integrationsoptionen den Bildprovider `openai` waehlen
+und einen OpenAI-Projekt-API-Schluessel eintragen. Beim Providerwechsel werden
+der bisherige Schluessel und die Modell-/Groessenvorgaben zurueckgesetzt.
+Vorgabe ist `gpt-image-2.5-flare` mit `1024x1024` Pixeln; OpenAI-Bilder
+werden als PNG mit Qualitaet `low` angefordert, um die Kosten gering zu halten.
+Das Bildmodell bleibt frei konfigurierbar. Bereits gespeicherte Modelle werden
+nicht automatisch ersetzt: `gpt-image-1` muss in den Optionen geaendert werden.
+Die API benoetigt eigenes Guthaben; ein ChatGPT-Login allein reicht nicht.
 
 Der Statussensor veroeffentlicht `attributes.presentation`. Nutze dieses Attribut
 ueber die zugehoerige Karte; es ist der stabile Anzeigevertrag zwischen Backend

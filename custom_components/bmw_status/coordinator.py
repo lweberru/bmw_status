@@ -34,6 +34,7 @@ from .const import (
     CONF_MAP_ENABLED,
     CONF_MAP_STYLE,
     CONF_MAP_ZOOM,
+    DEFAULT_IMAGE_MODELS,
     DOMAIN,
     PRESENTATION_SCHEMA_VERSION,
 )
@@ -179,7 +180,7 @@ class BMWStatusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         api_key = str(options.get("api_key") or "")
         if provider not in {"gemini", "openai"} or not api_key:
             return None
-        default_model = "gemini-2.5-flash-image" if provider == "gemini" else "gpt-image-1"
+        default_model = DEFAULT_IMAGE_MODELS[provider]
         return ImageProviderConfig(
             provider=provider,
             api_key=api_key,

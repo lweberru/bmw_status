@@ -19,6 +19,10 @@ CONF_IMAGE_SIZE: Final = "size"
 CONF_IMAGE_VIEW_MODE: Final = "view_mode"
 CONF_IMAGE_SCENE_MODE: Final = "scene_mode"
 CONF_IMAGE_GEOCODE_ENTITY: Final = "geocode_entity"
+DEFAULT_IMAGE_MODELS: Final = {
+    "gemini": "gemini-2.5-flash-image",
+    "openai": "gpt-image-2.5-flare",
+}
 
 CONF_MAP: Final = "map"
 CONF_MAP_ENABLED: Final = "enabled"
