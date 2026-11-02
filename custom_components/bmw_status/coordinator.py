@@ -130,10 +130,16 @@ class BMWStatusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 return
             is_tire_render = state_key.startswith("tire-")
             prompt = self._build_tire_render_prompt(presentation) if is_tire_render else self._build_state_render_prompt(presentation)
-            image = await async_generate_state_render(self.hass, config, prompt)
             asset = "tire" if is_tire_render else "state"
             provider = config.provider
             model = config.model
+            # The queued state may have changed during the debounce period.
+            # Store the image under the snapshot actually used for its prompt.
+            state_key = self._tire_image_key(presentation) if is_tire_render else self._state_image_key(presentation)
+            cached = self._image_index.get("images", {}).get(state_key)
+            if cached and await self._image_store.async_exists(self.hass, str(cached.get("filename") or "")):
+                return
+            image = await async_generate_state_render(self.hass, config, prompt)
         filename = f"{asset}-{state_key}.png"
         local_url = await self._image_store.async_write_png(self.hass, filename, image)
         self._image_index.setdefault("images", {})[state_key] = {
@@ -153,8 +159,8 @@ class BMWStatusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         if not self.data:
             return
         presentation = self.data.get("presentation") or {}
-        state_key = f"state-{presentation_key({'renderer_version': 3, **presentation})}"
-        tire_key = f"tire-{presentation_key({'vehicle': presentation.get('vehicle') or {}, 'asset': 'tire_top_down'})}"
+        state_key = self._state_image_key(presentation)
+        tire_key = self._tire_image_key(presentation)
         if self._image_config():
             self._image_index.get("images", {}).pop(state_key, None)
             self._image_index.get("images", {}).pop(tire_key, None)
@@ -416,8 +422,8 @@ class BMWStatusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         presentation = build_presentation(vehicle, entities)
         if self._image_config():
             presentation["image_context"] = await self._async_build_image_context(presentation)
-        state_key = f"state-{presentation_key({'renderer_version': 3, **presentation})}"
-        tire_key = f"tire-{presentation_key({'vehicle': presentation.get('vehicle') or {}, 'asset': 'tire_top_down'})}"
+        state_key = self._state_image_key(presentation)
+        tire_key = self._tire_image_key(presentation)
         cached_image = self._image_index.get("images", {}).get(state_key)
         cached_tire_image = self._image_index.get("images", {}).get(tire_key)
         image_configured = self._image_config() is not None
@@ -425,6 +431,9 @@ class BMWStatusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             presentation["images"] = [str(cached_image["local_url"])]
             self._image_state = ImageJobState("ready")
         elif image_configured:
+            fallback = await self._async_latest_cached_state_image()
+            if fallback:
+                presentation["images"] = [fallback]
             self._image_jobs.async_request(state_key)
         else:
             self._image_state = ImageJobState("disabled")
@@ -442,6 +451,33 @@ class BMWStatusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "error": self._image_state.error,
             "retry_after": self._image_state.retry_after,
         }
+
+    def _state_image_key(self, presentation: dict[str, Any]) -> str:
+        """Invalidate the render only when its prompt or provider settings change."""
+        config = self._image_config()
+        return f"state-{presentation_key({
+            'renderer_version': 4,
+            'prompt': self._build_state_render_prompt(presentation),
+            'provider': config.provider if config else None,
+            'model': config.model if config else None,
+            'size': config.size if config else None,
+        })}"
+
+    @staticmethod
+    def _tire_image_key(presentation: dict[str, Any]) -> str:
+        """Use one stable reference image for this vehicle's tire display."""
+        return f"tire-{presentation_key({'vehicle': presentation.get('vehicle') or {}, 'asset': 'tire_top_down'})}"
+
+    async def _async_latest_cached_state_image(self) -> str | None:
+        """Keep the latest existing vehicle render visible while a new one loads."""
+        candidates = [
+            metadata for key, metadata in self._image_index.get("images", {}).items()
+            if key.startswith("state-") and metadata.get("local_url") and metadata.get("filename")
+        ]
+        for metadata in sorted(candidates, key=lambda item: str(item.get("updated_at") or ""), reverse=True):
+            if await self._image_store.async_exists(self.hass, str(metadata["filename"])):
+                return str(metadata["local_url"])
+        return None
 
     def _vehicle_metadata(self, device_id: str) -> dict[str, str | None]:
         """Return serializable metadata for the selected CarData device."""

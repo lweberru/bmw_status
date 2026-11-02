@@ -1,11 +1,101 @@
 """Tests for the BMW Status coordinator projection boundary."""
 
+from copy import deepcopy
+from unittest.mock import AsyncMock, Mock
+
+import pytest
+
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.bmw_status.const import CARDATA_DOMAIN, CONF_CARDATA_DEVICE_ID, CONF_LICENSE_PLATE, DOMAIN
 from custom_components.bmw_status.coordinator import BMWStatusCoordinator
+from custom_components.bmw_status.image_jobs import ImageJobState
+
+
+@pytest.fixture
+def image_coordinator(hass, monkeypatch):
+    """Configure image generation without invoking remote services."""
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={CONF_CARDATA_DEVICE_ID: "vehicle-device"},
+        options={"image": {"enabled": True, "provider": "openai", "api_key": "test-key"}},
+    )
+    entry.add_to_hass(hass)
+    coordinator = BMWStatusCoordinator(hass, entry)
+    monkeypatch.setattr(coordinator, "_async_build_image_context", AsyncMock(return_value={}))
+    monkeypatch.setattr(coordinator._image_jobs, "async_request", Mock())
+    return coordinator
+
+
+async def test_image_key_ignores_metrics_and_published_image_urls(image_coordinator):
+    """Routine telemetry and image publication must not incur another generation."""
+    first = {"vehicle": {"name": "BMW"}, "status": {"key": "parked"}, "entities": {"fuel": {"state": "50"}}}
+    changed = deepcopy(first)
+    changed["entities"]["fuel"]["state"] = "49"
+    changed["images"] = ["/local/bmw_status/old.png"]
+    changed["tire_image"] = "/local/bmw_status/tire.png"
+    assert image_coordinator._state_image_key(first) == image_coordinator._state_image_key(changed)
+
+    changed["status"]["key"] = "driving"
+    assert image_coordinator._state_image_key(first) != image_coordinator._state_image_key(changed)
+
+
+@pytest.mark.parametrize("failed", [False, True])
+async def test_previous_image_remains_visible_while_new_state_is_pending_or_failed(image_coordinator, failed):
+    """Reuse an existing state image, including legacy cache entries after reload."""
+    coordinator = image_coordinator
+    filename = "last-state.png"
+    url = await coordinator._image_store.async_write_png(coordinator.hass, filename, b"png")
+    coordinator._image_index["images"] = {
+        "state-legacy": {"filename": filename, "local_url": url, "updated_at": "2026-11-01"},
+        "state-deleted": {"filename": "missing.png", "local_url": "/missing.png", "updated_at": "2026-11-02"},
+        "tire-reference": {"filename": filename, "local_url": "/wrong-tire.png", "updated_at": "2026-11-03"},
+    }
+    if failed:
+        coordinator._image_state = ImageJobState("error", "Provider unavailable")
+    data = await coordinator._async_update_data()
+
+    assert data["presentation"]["images"] == [url]
+    assert coordinator._image_jobs.async_request.call_count == 2
+    if failed:
+        assert data["image_status"] == "error"
+        assert data["error"] == "Provider unavailable"
+
+
+async def test_render_uses_latest_snapshot_key_and_reuses_result(image_coordinator, monkeypatch):
+    """A queued request must not cache a new scene under an obsolete state key."""
+    coordinator = image_coordinator
+    coordinator.async_set_updated_data({"presentation": {"vehicle": {"name": "BMW"}, "status": {"key": "driving"}}})
+    generate = AsyncMock(return_value=b"png")
+    monkeypatch.setattr("custom_components.bmw_status.coordinator.async_generate_state_render", generate)
+    monkeypatch.setattr(coordinator, "async_request_refresh", AsyncMock())
+    expected_key = coordinator._state_image_key(coordinator.data["presentation"])
+
+    await coordinator._async_render_image("state-obsolete")
+    assert "state-obsolete" not in coordinator._image_index["images"]
+    assert expected_key in coordinator._image_index["images"]
+    assert "driving on a road" in generate.call_args.args[2]
+
+    await coordinator._async_render_image("state-obsolete")
+    generate.assert_awaited_once()
+
+
+async def test_regeneration_uses_same_key_as_update_with_published_images(image_coordinator):
+    """Adding image URLs to the projection must not change the regeneration key."""
+    coordinator = image_coordinator
+    data = await coordinator._async_update_data()
+    expected_key = coordinator._image_jobs.async_request.call_args_list[0].args[0]
+    data["presentation"]["images"] = ["/local/previous.png"]
+    coordinator.async_set_updated_data(data)
+    coordinator._image_index["images"][expected_key] = {"filename": "previous.png"}
+    coordinator._image_jobs.async_request.reset_mock()
+
+    await coordinator.async_regenerate_images()
+
+    assert expected_key not in coordinator._image_index["images"]
+    coordinator._image_jobs.async_request.assert_any_call(expected_key, force=True)
 
 
 async def test_coordinator_projects_only_the_selected_cardata_device(hass):

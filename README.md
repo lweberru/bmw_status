@@ -8,7 +8,7 @@ to be used together: this integration turns the entities supplied by
 `bmw-cardata-ha` into a versioned presentation contract, while the card renders
 that contract without querying vehicle providers in the browser.
 
-Version: 0.3.2
+Version: 0.3.3
 
 ## Features
 
@@ -44,6 +44,10 @@ size. The default is `gpt-image-2.5-flare` at `1024x1024`, requested as PNG with
 `low` quality to keep costs down. The model remains configurable. Existing model
 settings are preserved; replace `gpt-image-1` in the options if previously saved.
 API credit is required; a ChatGPT login alone does not authorize these requests.
+
+The latest cached vehicle image stays visible while a new scene is generated
+or the image provider is unavailable. Changes to telemetry that do not affect
+the image prompt reuse the existing render.
 
 The status sensor publishes `attributes.presentation`. Use that attribute only
 through the companion card; it is the stable display contract between the

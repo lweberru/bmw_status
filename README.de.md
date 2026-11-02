@@ -9,7 +9,7 @@ von `bmw-cardata-ha` gelieferten Entitaeten in einen versionierten
 Praesentationsvertrag; die Karte rendert diesen Vertrag, ohne im Browser auf
 Fahrzeug-Provider zuzugreifen.
 
-Version: 0.3.2
+Version: 0.3.3
 
 ## Funktionen
 
@@ -47,6 +47,10 @@ werden als PNG mit Qualitaet `low` angefordert, um die Kosten gering zu halten.
 Das Bildmodell bleibt frei konfigurierbar. Bereits gespeicherte Modelle werden
 nicht automatisch ersetzt: `gpt-image-1` muss in den Optionen geaendert werden.
 Die API benoetigt eigenes Guthaben; ein ChatGPT-Login allein reicht nicht.
+
+Das letzte gecachte Fahrzeugbild bleibt sichtbar, waehrend eine neue Szene
+generiert wird oder der Bildprovider nicht erreichbar ist. Messwertaenderungen,
+die den Bildprompt nicht beeinflussen, verwenden das bestehende Bild weiter.
 
 Der Statussensor veroeffentlicht `attributes.presentation`. Nutze dieses Attribut
 ueber die zugehoerige Karte; es ist der stabile Anzeigevertrag zwischen Backend
