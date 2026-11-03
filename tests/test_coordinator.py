@@ -10,7 +10,7 @@ from homeassistant.helpers import entity_registry as er
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.bmw_status.const import CARDATA_DOMAIN, CONF_CARDATA_DEVICE_ID, CONF_LICENSE_PLATE, DOMAIN
-from custom_components.bmw_status.coordinator import BMWStatusCoordinator
+from custom_components.bmw_status.coordinator import BMWStatusCoordinator, _weather_description
 from custom_components.bmw_status.image_jobs import ImageJobState
 
 
@@ -219,8 +219,8 @@ async def test_image_prompt_keeps_open_driver_door_attached(hass):
     assert "front passenger door closed" in prompt
 
 
-async def test_image_prompt_includes_location_weather_and_season(hass):
-    """The image prompt carries the current vehicle environment context."""
+async def test_image_prompt_uses_weather_category_without_measurements_or_location(hass):
+    """The scene retains season and weather without highly variable details."""
     status_entry = MockConfigEntry(
         domain=DOMAIN,
         data={CONF_CARDATA_DEVICE_ID: "device-id"},
@@ -239,11 +239,54 @@ async def test_image_prompt_includes_location_weather_and_season(hass):
                 "time_of_day": "afternoon",
                 "weather": "clear sky",
                 "temperature": 24,
+                "precipitation": 0.7,
             },
         }
     )
 
-    assert "Heilbronn, Germany" in prompt
+    assert "Heilbronn, Germany" not in prompt
     assert "summer" in prompt
     assert "clear sky" in prompt
-    assert "24" in prompt
+    assert "24" not in prompt
+    assert "0.7" not in prompt
+    assert "afternoon" in prompt
+
+
+@pytest.mark.parametrize("change", [
+    {"temperature": -5.2},
+    {"precipitation": 15.6},
+    {"location": "Berlin, Germany"},
+    {"temperature": 17, "precipitation": 0.1, "location": "Hamburg, Germany"},
+])
+async def test_image_cache_ignores_temperature_precipitation_and_location(image_coordinator, change):
+    """Different measurements or addresses must reuse the same parked image."""
+    first = {
+        "vehicle": {"name": "BMW"},
+        "status": {"key": "parked"},
+        "image_context": {
+            "weather": "rainy", "temperature": 12.1, "precipitation": 0.5,
+            "location": "Heilbronn, Germany", "season": "autumn", "time_of_day": "afternoon",
+        },
+    }
+    changed = deepcopy(first)
+    changed["image_context"].update(change)
+
+    assert image_coordinator._build_state_render_prompt(first) == image_coordinator._build_state_render_prompt(changed)
+    assert image_coordinator._state_image_key(first) == image_coordinator._state_image_key(changed)
+
+
+@pytest.mark.parametrize("weather_codes, same_image", [
+    ((61, 65), True),  # Light and heavy rain share a category.
+    ((71, 75), True),  # Light and heavy snowfall share a category.
+    ((0, 61), False),  # Sun to rain changes the scene.
+    ((61, 71), False),  # Rain to snow changes the scene.
+    ((3, 45), False),  # Overcast to fog changes the scene.
+])
+async def test_image_cache_responds_to_weather_categories(image_coordinator, weather_codes, same_image):
+    """Only category changes, rather than precipitation intensity, invalidate images."""
+    first = {"vehicle": {"name": "BMW"}, "status": {"key": "parked"},
+             "image_context": {"weather": _weather_description(weather_codes[0])}}
+    changed = deepcopy(first)
+    changed["image_context"]["weather"] = _weather_description(weather_codes[1])
+
+    assert (image_coordinator._state_image_key(first) == image_coordinator._state_image_key(changed)) is same_image

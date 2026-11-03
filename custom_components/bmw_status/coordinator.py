@@ -363,19 +363,14 @@ class BMWStatusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         plate_instruction = f"License plate text must remain exactly: {license_plate}." if license_plate else ""
         image_context = presentation.get("image_context") or {}
         context_parts = []
-        if image_context.get("location"):
-            context_parts.append(f"location: {image_context['location']}")
         if image_context.get("season") or image_context.get("time_of_day"):
             context_parts.append(
                 f"season and time: {image_context.get('season', 'unknown')} {image_context.get('time_of_day', '')}".strip()
             )
         if image_context.get("weather"):
-            weather = f"weather: {image_context['weather']}"
-            if image_context.get("temperature") is not None:
-                weather += f", {image_context['temperature']} degrees C"
-            if image_context.get("precipitation") is not None:
-                weather += f", precipitation {image_context['precipitation']} mm"
-            context_parts.append(weather)
+            # Only the weather category affects the scene and its cache key.
+            # Exact measurements and addresses would create excessive renders.
+            context_parts.append(f"weather: {image_context['weather']}")
         context_instruction = f"Current scene context: {'; '.join(context_parts)}." if context_parts else ""
         return (
             f"Full-frame photorealistic {view} image of {identity}, {scene}. "
