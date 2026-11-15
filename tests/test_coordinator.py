@@ -1,13 +1,15 @@
 """Tests for the BMW Status coordinator projection boundary."""
 
 from copy import deepcopy
+from datetime import timedelta
 from unittest.mock import AsyncMock, Mock
 
 import pytest
 
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
-from pytest_homeassistant_custom_component.common import MockConfigEntry
+from pytest_homeassistant_custom_component.common import MockConfigEntry, async_fire_time_changed
+from homeassistant.util import dt as dt_util
 
 from custom_components.bmw_status.const import CARDATA_DOMAIN, CONF_CARDATA_DEVICE_ID, CONF_LICENSE_PLATE, DOMAIN
 from custom_components.bmw_status.coordinator import BMWStatusCoordinator, _weather_description
@@ -144,6 +146,94 @@ async def test_coordinator_projects_only_the_selected_cardata_device(hass):
     assert data["presentation"]["entities"]["fuel"] is None
     assert "map" not in data["presentation"]
     assert data["image_status"] == "disabled"
+
+
+async def test_fuel_storage_restores_before_first_refresh_and_is_vehicle_isolated(hass):
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={CONF_CARDATA_DEVICE_ID: "fuel-device"},
+        options={"fuel": {
+            "fuel_level_entity": "sensor.test_fuel",
+            "odometer_entity": "sensor.test_odometer",
+            "initial_total_liters": 8000,
+        }},
+    )
+    entry.add_to_hass(hass)
+    hass.states.async_set("sensor.test_fuel", "40", {"unit_of_measurement": "L"})
+    hass.states.async_set("sensor.test_odometer", "100000", {"unit_of_measurement": "km"})
+    coordinator = BMWStatusCoordinator(hass, entry)
+    await coordinator._async_update_data()
+    hass.states.async_set("sensor.test_fuel", "38", {"unit_of_measurement": "L"})
+    hass.states.async_set("sensor.test_odometer", "100025", {"unit_of_measurement": "km"})
+    result = await coordinator._async_update_data()
+    fuel = result["presentation"]["fuel_consumption"]
+    assert fuel["total"]["liters"] == 8002
+    restored = BMWStatusCoordinator(hass, entry)
+    result = await restored._async_update_data()
+    assert result["presentation"]["fuel_consumption"] == fuel
+    await restored.async_clear_image_cache()
+    assert restored.data["presentation"]["fuel_consumption"] == fuel
+
+    other_entry = MockConfigEntry(domain=DOMAIN, data=entry.data, options=entry.options)
+    other_entry.add_to_hass(hass)
+    other = BMWStatusCoordinator(hass, other_entry)
+    result = await other._async_update_data()
+    assert result["presentation"]["fuel_consumption"]["total"]["liters"] == 8000
+    await restored.async_shutdown()
+
+
+async def test_fuel_failed_save_does_not_advance_reference(hass, monkeypatch):
+    entry = MockConfigEntry(
+        domain=DOMAIN, data={CONF_CARDATA_DEVICE_ID: "fuel-device"},
+        options={"fuel": {"fuel_level_entity": "sensor.fuel", "initial_total_liters": 0}},
+    )
+    coordinator = BMWStatusCoordinator(hass, entry)
+    hass.states.async_set("sensor.fuel", "40", {"unit_of_measurement": "L"})
+    await coordinator._async_update_data()
+    hass.states.async_set("sensor.fuel", "39", {"unit_of_measurement": "L"})
+    save = coordinator._fuel_store.async_save
+    monkeypatch.setattr(coordinator._fuel_store, "async_save", AsyncMock(side_effect=OSError("disk full")))
+    with pytest.raises(OSError, match="disk full"):
+        await coordinator._async_update_data()
+    monkeypatch.setattr(coordinator._fuel_store, "async_save", save)
+    result = await coordinator._async_update_data()
+    assert result["presentation"]["fuel_consumption"]["total"]["liters"] == 1
+
+
+async def test_fuel_sensor_subscription_and_midnight_refresh(hass, freezer, monkeypatch):
+    before = dt_util.now().replace(hour=23, minute=59, second=0, microsecond=0)
+    freezer.move_to(before)
+    entry = MockConfigEntry(
+        domain=DOMAIN, data={CONF_CARDATA_DEVICE_ID: "fuel-device"},
+        options={"fuel": {
+            "fuel_level_entity": "sensor.external_fuel",
+            "odometer_entity": "sensor.external_odometer",
+            "initial_total_liters": 0,
+        }},
+    )
+    entry.add_to_hass(hass)
+    hass.states.async_set("sensor.external_fuel", "40", {"unit_of_measurement": "L"})
+    hass.states.async_set("sensor.external_odometer", "100", {"unit_of_measurement": "km"})
+    coordinator = BMWStatusCoordinator(hass, entry)
+    refresh = AsyncMock(side_effect=coordinator.async_refresh)
+    monkeypatch.setattr(coordinator, "async_request_refresh", refresh)
+    await coordinator.async_start()
+    hass.states.async_set("sensor.external_fuel", "39", {"unit_of_measurement": "L"})
+    await hass.async_block_till_done()
+    assert coordinator.data["presentation"]["fuel_consumption"]["today"]["liters"] == 1
+    refresh.reset_mock()
+
+    midnight = before + timedelta(minutes=1)
+    freezer.move_to(midnight)
+    async_fire_time_changed(hass, dt_util.as_utc(midnight))
+    await hass.async_block_till_done()
+    refresh.assert_awaited_once()
+    fuel = coordinator.data["presentation"]["fuel_consumption"]
+    assert fuel["day"] == midnight.date().isoformat()
+    assert fuel["today"]["liters"] == 0
+    assert fuel["total"]["liters"] == 1
+    await coordinator.async_stop()
+    await coordinator.async_shutdown()
 
 
 async def test_image_prompt_uses_cardata_vehicle_identity_and_configured_plate(hass):

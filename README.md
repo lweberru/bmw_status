@@ -8,7 +8,7 @@ to be used together: this integration turns the entities supplied by
 `bmw-cardata-ha` into a versioned presentation contract, while the card renders
 that contract without querying vehicle providers in the browser.
 
-Version: 0.3.4
+Version: 0.4.0
 
 ## Features
 
@@ -52,6 +52,41 @@ the image prompt reuse the existing render.
 The status sensor publishes `attributes.presentation`. Use that attribute only
 through the companion card; it is the stable display contract between the
 backend and frontend.
+
+## Fuel consumption
+
+Setup and integration options include a **Fuel consumption** step (currently
+labelled **Spritverbrauch**). Tank-level and odometer sensors are detected on the
+selected vehicle, or can be selected explicitly. Supported units are L or %
+and km or mi. Percentage levels require the tank capacity in liters.
+
+Enter lifetime fuel already consumed **before the integration's first sample**
+as `initial_total_liters`. Lifetime distance uses the initial odometer plus
+observed distance. Without that historical fuel baseline, lifetime consumption
+stays unknown. Optionally provide both liters and kilometers since the previous
+refueling at that same starting point; otherwise the first tank period is
+marked incomplete. Refueling is inferred from a rise of at least 5 L by default;
+the threshold is configurable and partial refills are supported.
+
+The existing status sensor adds `presentation.fuel_consumption`, containing
+`total`, `since_refuel` and `today`, each with `liters`, `distance_km`,
+`average_l_per_100km` and `incomplete`. It also publishes tracking start,
+last detected refill time/amount and explicit `issues`. Unknown values are
+`null`; an average without distance is not fabricated.
+
+These are **tank-level estimates**, not exact trip-computer or pump readings.
+Small refills, sensor resolution and consumption hidden between reports limit
+accuracy. Deltas belong to their observation day in Home Assistant's timezone;
+cross-midnight deltas cannot be split accurately without intermediate samples.
+Daily counters roll over at midnight even while parked.
+
+Counters and references persist per config entry in Home Assistant storage,
+restore before the first refresh and survive image-cache clearing. Options
+changes reload the entry. Historical baselines always refer to the original
+tracking start shown in the card, including when edited later; they are not
+added again on restart. Tank-period baselines apply only before the first
+detected refill. Changing sensors or percentage tank capacity re-baselines
+the affected measurement without resetting totals and marks coverage incomplete.
 
 ## Services
 

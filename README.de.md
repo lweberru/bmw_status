@@ -9,7 +9,7 @@ von `bmw-cardata-ha` gelieferten Entitaeten in einen versionierten
 Praesentationsvertrag; die Karte rendert diesen Vertrag, ohne im Browser auf
 Fahrzeug-Provider zuzugreifen.
 
-Version: 0.3.4
+Version: 0.4.0
 
 ## Funktionen
 
@@ -55,6 +55,47 @@ die den Bildprompt nicht beeinflussen, verwenden das bestehende Bild weiter.
 Der Statussensor veroeffentlicht `attributes.presentation`. Nutze dieses Attribut
 ueber die zugehoerige Karte; es ist der stabile Anzeigevertrag zwischen Backend
 und Frontend.
+
+## Spritverbrauch
+
+Der Configflow und die Integrationsoptionen enthalten den Schritt **Spritverbrauch**:
+
+- Tankstand- und Kilometerstand-Sensor werden am gewaehlten Fahrzeug automatisch
+  erkannt. Alternativ lassen sich vorhandene Sensoren explizit auswaehlen.
+- Tankstand muss Liter oder Prozent liefern, Kilometerstand km oder mi.
+  Bei Prozent ist der **Tankinhalt in Litern** erforderlich.
+- **Anfangsverbrauch gesamt** ist der bereits verbrauchte Kraftstoff seit
+  Erstzulassung bis zum ersten Erfassungszeitpunkt dieser Integration, in Litern.
+  Die Lebenszeitstrecke ergibt sich aus dem ersten Kilometerstand plus erfasster
+  Strecke. Ohne Anfangsverbrauch bleibt der Lebenszeitverbrauch unbekannt.
+- Optional Anfangsverbrauch und Anfangsstrecke seit dem letzten Tanken
+  gemeinsam angeben. Ohne diese Werte ist das erste Tankintervall unvollstaendig.
+- Die Tankerkennung reagiert auf einen Anstieg ab **5 L** (konfigurierbar),
+  auch bei Teilbetankung. Kleine Anstiege werden als Messschwankung ignoriert.
+
+Das additive Attribut `presentation.fuel_consumption` enthaelt `total`,
+`since_refuel` und `today`, jeweils mit `liters`, `distance_km`,
+`average_l_per_100km` und `incomplete`. Hinzu kommen Erfassungsbeginn,
+Tankereigniszeit, geschaetzte Nachfuellmenge und Hinweise auf fehlende Daten.
+Bei fehlenden Grundlagen werden `null` und erklaerende `issues` statt erfundener
+Werte veroeffentlicht. Es bleibt beim vorhandenen Statussensor.
+
+Die Werte sind **Tankstand-basierte Schaetzungen**, keine exakten Bordcomputer-
+oder Zapfsaeulenmessungen. Kleine Betankungen, Verbrauch waehrend eines
+Tankintervalls zwischen zwei Meldungen und Sensorauflosung begrenzen die
+Genauigkeit. Verbrauch und Strecke werden dem Tag ihrer Beobachtung in der
+Home-Assistant-Zeitzone zugeordnet; eine Verteilung ueber Mitternacht ist ohne
+Zwischenmessungen nicht rekonstruierbar. Der Tageszaehler wechselt um Mitternacht
+auch bei parkendem Fahrzeug. Bei Strecke 0 bleibt der Durchschnitt unbekannt.
+
+Zaehler und Messreferenzen werden getrennt je Config Entry in Home Assistants
+`.storage` gespeichert, vor der ersten Aktualisierung wiederhergestellt und
+nicht durch das Leeren des Bildcaches geloescht. Optionsaenderungen laden den
+Entry neu. Anfangswerte beziehen sich auch nachtraeglich auf den urspruenglichen
+Erfassungsbeginn (in der Karte sichtbar); sie werden nicht bei Neustarts erneut
+addiert. Tankintervall-Anfangswerte gelten nur vor dem ersten erkannten Tanken.
+Ein Wechsel der Sensoren oder des Tankinhalts setzt die betroffene Messreferenz
+neu, behaelt Summen und kennzeichnet die Erfassung als unvollstaendig.
 
 ## Aktionen
 

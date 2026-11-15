@@ -10,6 +10,9 @@ DATA_COORDINATOR: Final = "coordinator"
 PRESENTATION_SCHEMA_VERSION: Final = 1
 
 CONF_LICENSE_PLATE: Final = "license_plate"
+CONF_FUEL: Final = "fuel"
+CONF_FUEL_LEVEL_ENTITY: Final = "fuel_level_entity"
+CONF_ODOMETER_ENTITY: Final = "odometer_entity"
 CONF_IMAGE: Final = "image"
 CONF_IMAGE_ENABLED: Final = "enabled"
 CONF_IMAGE_PROVIDER: Final = "provider"

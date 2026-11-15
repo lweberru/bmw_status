@@ -33,6 +33,11 @@ async def test_entry_setup_and_unload_manage_coordinator_lifecycle(hass):
     hass.config_entries.async_forward_entry_setups.assert_awaited_once()
     assert hass.data[DOMAIN][entry.entry_id][DATA_COORDINATOR] is coordinator
 
+    hass.config_entries.async_reload = AsyncMock(return_value=True)
+    hass.config_entries.async_update_entry(entry, options={"fuel": {"tank_capacity_liters": 50}})
+    await hass.async_block_till_done()
+    hass.config_entries.async_reload.assert_awaited_once_with(entry.entry_id)
+
     assert await async_unload_entry(hass, entry)
 
     hass.config_entries.async_unload_platforms.assert_awaited_once()

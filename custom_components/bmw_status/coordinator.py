@@ -17,7 +17,8 @@ from homeassistant.core import Event, HomeAssistant, callback
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers import aiohttp_client
-from homeassistant.helpers.event import async_track_state_change_event, async_track_time_interval
+from homeassistant.helpers.event import async_track_state_change_event, async_track_time_interval, async_track_time_change
+from homeassistant.helpers.storage import Store
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from homeassistant.util import dt as dt_util
 from PIL import Image
@@ -25,6 +26,9 @@ from PIL import Image
 from .const import (
     CARDATA_DOMAIN,
     CONF_CARDATA_DEVICE_ID,
+    CONF_FUEL,
+    CONF_FUEL_LEVEL_ENTITY,
+    CONF_ODOMETER_ENTITY,
     CONF_IMAGE,
     CONF_IMAGE_ENABLED,
     CONF_IMAGE_GEOCODE_ENTITY,
@@ -41,6 +45,7 @@ from .const import (
 from .image_jobs import ImageJobManager, ImageJobState, presentation_key
 from .image_provider import ImageProviderConfig, async_generate_state_render
 from .image_store import ImageStore
+from .fuel import FuelState, FuelTracker
 from .presentation import EntitySnapshot, build_presentation
 
 _LOGGER = logging.getLogger(__name__)
@@ -57,6 +62,10 @@ class BMWStatusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             name=f"{DOMAIN}-{entry.entry_id}",
         )
         self.entry = entry
+        self._fuel_store: Store[dict[str, Any]] = Store(hass, 1, f"{DOMAIN}.{entry.entry_id}.fuel")
+        self._fuel_tracker: FuelTracker | None = None
+        self._fuel_issues: list[str] = []
+        self._unsub_midnight: Callable[[], None] | None = None
         self._unsub_state_changes: Callable[[], None] | None = None
         self._unsub_context_refresh: Callable[[], None] | None = None
         self._image_state = ImageJobState("disabled")
@@ -75,9 +84,16 @@ class BMWStatusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         geocode_entity = str((self.entry.options.get(CONF_IMAGE) or {}).get(CONF_IMAGE_GEOCODE_ENTITY) or "").strip()
         if geocode_entity:
             entity_ids.append(geocode_entity)
+        fuel_options = self.entry.options.get(CONF_FUEL) or {}
+        entity_ids.extend(
+            fuel_options[key] for key in (CONF_FUEL_LEVEL_ENTITY, CONF_ODOMETER_ENTITY) if fuel_options.get(key)
+        )
         self._unsub_state_changes = async_track_state_change_event(self.hass, entity_ids, self._async_handle_state_change)
         self._unsub_context_refresh = async_track_time_interval(
             self.hass, self._async_handle_context_refresh, timedelta(minutes=15)
+        )
+        self._unsub_midnight = async_track_time_change(
+            self.hass, self._async_handle_context_refresh, hour=0, minute=0, second=0
         )
         await self.async_request_refresh()
 
@@ -89,6 +105,9 @@ class BMWStatusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         if self._unsub_context_refresh:
             self._unsub_context_refresh()
             self._unsub_context_refresh = None
+        if self._unsub_midnight:
+            self._unsub_midnight()
+            self._unsub_midnight = None
         self._image_jobs.async_shutdown()
         self._map_jobs.async_shutdown()
 
@@ -409,12 +428,52 @@ class BMWStatusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "cut-off parts, perspective view, or mirrored orientation."
         )
 
+    async def _async_update_fuel(
+        self, presentation: dict[str, Any], entities: list[EntitySnapshot]
+    ) -> dict[str, Any] | None:
+        """Restore before the first sample and persist before publishing totals."""
+        if self._fuel_tracker is None:
+            saved = await self._fuel_store.async_load()
+            self._fuel_tracker = FuelTracker(FuelState.from_dict(saved) if saved else None)
+        options = dict(self.entry.options.get(CONF_FUEL) or {})
+        selected: list[EntitySnapshot | None] = []
+        for option, key in ((CONF_FUEL_LEVEL_ENTITY, "fuel"), (CONF_ODOMETER_ENTITY, "odometer")):
+            entity_id = options.get(option)
+            if entity_id:
+                state = self.hass.states.get(entity_id)
+                selected.append(
+                    EntitySnapshot(
+                        entity_id=entity_id,
+                        state=state.state,
+                        name=entity_id,
+                        unit=state.attributes.get("unit_of_measurement"),
+                    ) if state else None
+                )
+            else:
+                entity_id = (presentation["entities"].get(key) or {}).get("entity_id")
+                selected.append(next((entity for entity in entities if entity.entity_id == entity_id), None))
+        previous = self._fuel_tracker.serialize()
+        tracker = FuelTracker(FuelState.from_dict(previous))
+        result = tracker.update(selected[0], selected[1], options, dt_util.now())
+        if result is not None and tracker.serialize() != previous:
+            await self._fuel_store.async_save(tracker.serialize())
+        self._fuel_tracker = tracker
+        issues = result["issues"] if result else []
+        if issues != self._fuel_issues:
+            if issues:
+                _LOGGER.warning("Fuel accounting for %s: %s", self.entry.entry_id, ", ".join(issues))
+            self._fuel_issues = issues
+        return result
+
     async def _async_update_data(self) -> dict[str, Any]:
         """Build the current presentation from the configured CarData device."""
         device_id = self.entry.data[CONF_CARDATA_DEVICE_ID]
         vehicle = self._vehicle_metadata(device_id)
         entities = self._entity_snapshots(device_id)
         presentation = build_presentation(vehicle, entities)
+        fuel = await self._async_update_fuel(presentation, entities)
+        if fuel is not None:
+            presentation["fuel_consumption"] = fuel
         if self._image_config():
             presentation["image_context"] = await self._async_build_image_context(presentation)
         state_key = self._state_image_key(presentation)

@@ -1,5 +1,11 @@
 {
   "config": {
+    "error": {
+      "fuel_invalid_number": "Bitte eine endliche, nicht negative Zahl angeben.",
+      "fuel_entity_not_found": "Die gewählte Sensor-Entität wurde nicht gefunden.",
+      "fuel_initial_pair": "Bitte Anfangsverbrauch und Anfangsstrecke seit dem Tanken gemeinsam angeben oder beide leer lassen.",
+      "fuel_threshold": "Die Tankschwelle darf nicht größer als der Tankinhalt sein."
+    },
     "abort": {
       "already_configured": "Dieses BMW-Fahrzeug ist bereits eingerichtet.",
       "no_cardata_vehicles": "Es wurden keine BMW CarData Fahrzeuge gefunden. Richte zuerst bmw-cardata-ha ein.",
@@ -18,6 +24,19 @@
         "description": "Konfiguriere optionale Fahrzeugdaten.",
         "data": {
           "license_plate": "Kennzeichen"
+        }
+      },
+      "fuel": {
+        "title": "Spritverbrauch",
+        "description": "Schätzung aus Tankstand und Kilometerstand. Leere Sensorfelder verwenden die Fahrzeug-Sensoren automatisch. Bei Tankstand in % ist der Tankinhalt erforderlich. Anfangswerte beziehen sich immer auf den ersten Erfassungszeitpunkt dieser Integration, auch bei späteren Änderungen. Ohne Gesamt-Anfangswert bleibt der Lebenszeitverbrauch unbekannt; ohne Tankintervall-Anfangswerte beginnt dieses erst mit der Erfassung. Fehlende Messdaten können nicht durch statische Werte ersetzt werden.",
+        "data": {
+          "fuel_level_entity": "Tankstand-Sensor (L oder %; optional)",
+          "odometer_entity": "Kilometerstand-Sensor (km oder mi; optional)",
+          "tank_capacity_liters": "Tankinhalt in Litern (bei % erforderlich)",
+          "refuel_threshold_liters": "Tankanstieg für Tankerkennung in Litern",
+          "initial_total_liters": "Verbrauch seit Erstzulassung bis Erfassungsbeginn in Litern",
+          "initial_since_refuel_liters": "Verbrauch seit letztem Tanken bis Erfassungsbeginn in Litern",
+          "initial_since_refuel_km": "Strecke seit letztem Tanken bis Erfassungsbeginn in km"
         }
       },
       "image_provider": {
@@ -61,11 +80,30 @@
     }
   },
   "options": {
+    "error": {
+      "fuel_invalid_number": "Bitte eine endliche, nicht negative Zahl angeben.",
+      "fuel_entity_not_found": "Die gewählte Sensor-Entität wurde nicht gefunden.",
+      "fuel_initial_pair": "Bitte Anfangsverbrauch und Anfangsstrecke seit dem Tanken gemeinsam angeben oder beide leer lassen.",
+      "fuel_threshold": "Die Tankschwelle darf nicht größer als der Tankinhalt sein."
+    },
     "step": {
       "init": {
         "title": "Fahrzeugdarstellung",
         "data": {
           "license_plate": "Kennzeichen"
+        }
+      },
+      "fuel": {
+        "title": "Spritverbrauch",
+        "description": "Schätzung aus Tankstand und Kilometerstand. Leere Sensorfelder verwenden die Fahrzeug-Sensoren automatisch. Bei Tankstand in % ist der Tankinhalt erforderlich. Anfangswerte beziehen sich immer auf den ersten Erfassungszeitpunkt dieser Integration, nicht auf heute. Änderungen am Tankinhalt oder an den Sensoren setzen nur die Messreferenz neu; bisherige Summen bleiben erhalten. Tankintervall-Anfangswerte gelten nur bis zum ersten erkannten Tanken.",
+        "data": {
+          "fuel_level_entity": "Tankstand-Sensor (L oder %; optional)",
+          "odometer_entity": "Kilometerstand-Sensor (km oder mi; optional)",
+          "tank_capacity_liters": "Tankinhalt in Litern (bei % erforderlich)",
+          "refuel_threshold_liters": "Tankanstieg für Tankerkennung in Litern",
+          "initial_total_liters": "Verbrauch seit Erstzulassung bis Erfassungsbeginn in Litern",
+          "initial_since_refuel_liters": "Verbrauch seit letztem Tanken bis Erfassungsbeginn in Litern",
+          "initial_since_refuel_km": "Strecke seit letztem Tanken bis Erfassungsbeginn in km"
         }
       },
       "image_provider": {

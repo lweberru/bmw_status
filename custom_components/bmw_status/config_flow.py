@@ -11,10 +11,14 @@ from homeassistant.config_entries import ConfigEntry, ConfigFlowResult, OptionsF
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
+from homeassistant.helpers.selector import EntitySelector, EntitySelectorConfig
 
 from .const import (
     CARDATA_DOMAIN,
     CONF_CARDATA_DEVICE_ID,
+    CONF_FUEL,
+    CONF_FUEL_LEVEL_ENTITY,
+    CONF_ODOMETER_ENTITY,
     CONF_IMAGE,
     CONF_IMAGE_API_KEY,
     CONF_IMAGE_ENABLED,
@@ -33,9 +37,43 @@ from .const import (
     DEFAULT_IMAGE_MODELS,
     DOMAIN,
 )
+from .fuel import nonnegative_number
 
 IMAGE_PROVIDERS = ("gemini", "openai")
 OPENAI_SIZES = ("1024x1024", "1536x1024", "1024x1536")
+
+
+def _fuel_schema(current: dict[str, Any]) -> vol.Schema:
+    """Use suggestions so optional values can also be cleared in the UI."""
+    schema: dict[Any, Any] = {}
+    for key in (CONF_FUEL_LEVEL_ENTITY, CONF_ODOMETER_ENTITY):
+        schema[vol.Optional(key, description={"suggested_value": current.get(key)})] = EntitySelector(
+            EntitySelectorConfig(domain="sensor")
+        )
+    for key in ("tank_capacity_liters", "initial_total_liters", "initial_since_refuel_liters", "initial_since_refuel_km"):
+        validator = vol.All(vol.Coerce(float), vol.Range(min=0.001 if key == "tank_capacity_liters" else 0))
+        schema[vol.Optional(key, description={"suggested_value": current.get(key)})] = validator
+    schema[vol.Required("refuel_threshold_liters", default=current.get("refuel_threshold_liters", 5.0))] = vol.All(
+        vol.Coerce(float), vol.Range(min=0.1)
+    )
+    return vol.Schema(schema)
+
+
+def _fuel_errors(hass: HomeAssistant, values: dict[str, Any]) -> dict[str, str]:
+    errors = {}
+    for key in ("tank_capacity_liters", "refuel_threshold_liters", "initial_total_liters", "initial_since_refuel_liters", "initial_since_refuel_km"):
+        if key in values and nonnegative_number(values[key]) is None:
+            errors[key] = "fuel_invalid_number"
+    for key in (CONF_FUEL_LEVEL_ENTITY, CONF_ODOMETER_ENTITY):
+        entity_id = values.get(key)
+        if entity_id and hass.states.get(entity_id) is None and er.async_get(hass).async_get(entity_id) is None:
+            errors[key] = "fuel_entity_not_found"
+    if ("initial_since_refuel_liters" in values) != ("initial_since_refuel_km" in values):
+        errors["base"] = "fuel_initial_pair"
+    capacity = values.get("tank_capacity_liters")
+    if capacity and values.get("refuel_threshold_liters", 5) > capacity:
+        errors["refuel_threshold_liters"] = "fuel_threshold"
+    return errors
 
 
 def _cardata_vehicle_options(hass: HomeAssistant) -> dict[str, str]:
@@ -94,7 +132,7 @@ class BMWStatusConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         """Configure optional vehicle display values."""
         if user_input is not None:
             self._options.update(user_input)
-            return await self.async_step_image_provider()
+            return await self.async_step_fuel()
         return self.async_show_form(
             step_id="card",
             data_schema=vol.Schema(
@@ -102,6 +140,16 @@ class BMWStatusConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     vol.Optional(CONF_LICENSE_PLATE, default=""): str,
                 }
             ),
+        )
+
+    async def async_step_fuel(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Configure missing telemetry and historical consumption baselines."""
+        errors = _fuel_errors(self.hass, user_input) if user_input is not None else {}
+        if user_input is not None and not errors:
+            self._options[CONF_FUEL] = dict(user_input)
+            return await self.async_step_image_provider()
+        return self.async_show_form(
+            step_id="fuel", data_schema=_fuel_schema(user_input or {}), errors=errors
         )
 
     async def async_step_image_provider(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
@@ -194,7 +242,7 @@ class BMWStatusOptionsFlow(OptionsFlow):
         """Edit non-sensitive vehicle options."""
         if user_input is not None:
             self._options = {**self._config_entry.options, **user_input}
-            return await self.async_step_image_provider()
+            return await self.async_step_fuel()
         options = self._config_entry.options
         return self.async_show_form(
             step_id="init",
@@ -203,6 +251,17 @@ class BMWStatusOptionsFlow(OptionsFlow):
                     vol.Optional(CONF_LICENSE_PLATE, default=options.get(CONF_LICENSE_PLATE, "")): str,
                 }
             ),
+        )
+
+    async def async_step_fuel(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Edit fuel settings without resetting accumulated consumption."""
+        errors = _fuel_errors(self.hass, user_input) if user_input is not None else {}
+        if user_input is not None and not errors:
+            self._options[CONF_FUEL] = dict(user_input)
+            return await self.async_step_image_provider()
+        current = self._options.get(CONF_FUEL) or {}
+        return self.async_show_form(
+            step_id="fuel", data_schema=_fuel_schema(user_input if user_input is not None else current), errors=errors
         )
 
     async def async_step_image_provider(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
